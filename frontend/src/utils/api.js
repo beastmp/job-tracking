@@ -36,21 +36,26 @@ export const setLoadingHandlers = (handlers) => {
     // Request interceptor
     instance.interceptors.request.use(
       config => {
-        // Increment the active requests counter
-        activeRequests++;
+        // Skip loading indicator if skipGlobalLoading is set
+        if (!config.skipGlobalLoading) {
+          // Increment the active requests counter
+          activeRequests++;
 
-        // If this is the first active request, show the loading indicator
-        if (activeRequests === 1 && loadingHandlers.setLoading) {
-          loadingHandlers.setLoading(true);
+          // If this is the first active request, show the loading indicator
+          if (activeRequests === 1 && loadingHandlers.setLoading) {
+            loadingHandlers.setLoading(true);
+          }
         }
 
         return config;
       },
       error => {
         // Handle request error
-        activeRequests--;
-        if (activeRequests === 0 && loadingHandlers.setLoading) {
-          loadingHandlers.setLoading(false);
+        if (!error.config?.skipGlobalLoading) {
+          activeRequests--;
+          if (activeRequests === 0 && loadingHandlers.setLoading) {
+            loadingHandlers.setLoading(false);
+          }
         }
         return Promise.reject(error);
       }
@@ -59,21 +64,26 @@ export const setLoadingHandlers = (handlers) => {
     // Response interceptor
     instance.interceptors.response.use(
       response => {
-        // Decrement the active requests counter
-        activeRequests--;
+        // Skip decrementing if skipGlobalLoading is set
+        if (!response.config.skipGlobalLoading) {
+          // Decrement the active requests counter
+          activeRequests--;
 
-        // If there are no more active requests, hide the loading indicator
-        if (activeRequests === 0 && loadingHandlers.setLoading) {
-          loadingHandlers.setLoading(false);
+          // If there are no more active requests, hide the loading indicator
+          if (activeRequests === 0 && loadingHandlers.setLoading) {
+            loadingHandlers.setLoading(false);
+          }
         }
 
         return response;
       },
       error => {
         // Handle response error
-        activeRequests--;
-        if (activeRequests === 0 && loadingHandlers.setLoading) {
-          loadingHandlers.setLoading(false);
+        if (!error.config?.skipGlobalLoading) {
+          activeRequests--;
+          if (activeRequests === 0 && loadingHandlers.setLoading) {
+            loadingHandlers.setLoading(false);
+          }
         }
         return Promise.reject(error);
       }
@@ -119,10 +129,13 @@ export const jobsAPI = {
 
 // Email operations API
 export const emailsAPI = {
-  searchEmails: (params) => longRunningApi.post('/api/emails/search-with-saved-credentials', params),
+  // Search emails with option to skip global loading indicator
+  searchEmails: (params) => longRunningApi.post('/api/emails/search-with-saved-credentials', params,
+    { skipGlobalLoading: true }),
   getFolders: (credentialId) => api.post('/api/emails/get-folders', { credentialId }),
   importItems: (data) => api.post('/api/emails/import-all', data),
-  syncEmails: (params) => longRunningApi.post('/api/emails/sync', params),
+  syncEmails: (params) => longRunningApi.post('/api/emails/sync', params,
+    { skipGlobalLoading: true }),
   saveCredentials: (data) => api.post('/api/emails/credentials', data),
   getCredentials: () => api.get('/api/emails/credentials'),
   deleteCredentials: (id) => api.delete(`/api/emails/credentials/${id}`)
