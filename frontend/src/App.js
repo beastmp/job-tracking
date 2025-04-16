@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
 import * as xlsx from 'xlsx';
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -749,7 +749,7 @@ const ExcelUpload = ({ onImportJobs }) => {
 };
 
 function EditJobWrapper({ selectedJob, fetchJob, handleUpdateJob }) {
-  const navigate = useNavigate();
+  // Remove unused navigate variable
 
   useEffect(() => {
     const id = window.location.pathname.split('/').pop();
@@ -773,10 +773,10 @@ function AppMain() {
   const [error, setError] = useState(null);
   const [selectedJob, setSelectedJob] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const { setLoading: setGlobalLoading, setLoadingMessage } = useLoading();
+  const { setLoadingMessage } = useLoading();
 
-  // Fetch all jobs - improved to work with refresh trigger
-  const fetchJobs = async () => {
+  // Define fetchJobs with useCallback to ensure stable reference between renders
+  const fetchJobs = useCallback(async () => {
     try {
       setLoading(true);
       // Show loading for short operations but with a minimal message
@@ -788,7 +788,7 @@ function AppMain() {
       setError('Error fetching jobs: ' + err.message);
       setLoading(false);
     }
-  };
+  }, [setLoadingMessage]); // Include only the dependencies that don't change frequently
 
   // Refresh function that components can call
   const refreshData = () => {
@@ -798,7 +798,7 @@ function AppMain() {
 
   useEffect(() => {
     fetchJobs();
-  }, [refreshTrigger]); // Now depends on refreshTrigger
+  }, [refreshTrigger, fetchJobs]); // Now fetchJobs has stable reference
 
   // Add a new job - improved to use refreshData
   const handleAddJob = async (jobData) => {
@@ -964,7 +964,7 @@ function AppMain() {
             } />
 
             <Route path="/upload-excel" element={
-              <ExcelUpload onImportJobs={refreshData} /> {/* Use refreshData */}
+              <ExcelUpload onImportJobs={refreshData} />
             } />
 
             <Route path="/email-integration" element={
