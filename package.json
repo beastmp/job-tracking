@@ -7,15 +7,16 @@
     "backend"
   ],
   "scripts": {
+    "install:all": "npm install && npm install --prefix frontend && npm install --prefix backend",
     "dev:frontend": "cd frontend && npm run start",
     "dev:backend": "cd backend && npm run dev",
-    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev": "npm run install:all && npx concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
     "build:frontend": "cd frontend && npm run build",
     "build:backend": "cd backend && npm run build",
-    "build": "npm run build:frontend && npm run build:backend",
+    "build": "npm run install:all && npm run build:frontend && npm run build:backend",
     "start:backend": "cd backend && npm start",
     "start:frontend": "cd frontend && npm run serve",
-    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\""
+    "start": "npx concurrently \"npm run start:backend\" \"npm run start:frontend\""
   },
   "devDependencies": {
     "concurrently": "^8.2.0"
