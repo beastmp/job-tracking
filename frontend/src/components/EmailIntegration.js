@@ -326,13 +326,28 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
 
         // Set a more informative error message
         if (error.code === 'ECONNABORTED') {
+          // Handle timeout error with specific guidance
           setEmailResults({
             success: false,
-            message: 'The email search operation timed out. Try searching fewer folders or a shorter time period.',
+            message: 'The search operation timed out. This happens because our server has a 30-second time limit for processing. Please try one of these solutions:',
             applications: [],
             statusUpdates: [],
             responses: []
           });
+
+          // Show timeout specific guidance with actionable steps
+          setToastMessage({
+            type: 'warning',
+            text: 'Search timed out. Try searching fewer folders or a shorter time period'
+          });
+
+          // Add specific recommendations to the error state
+          setError(`
+            To avoid timeouts:
+            1. Reduce the search timeframe (try 30 days instead of ${credential.searchTimeframeDays})
+            2. Search one folder at a time instead of ${credential.searchFolders.length} folders
+            3. Use the "Sync" button instead, which processes emails in the background
+          `);
         } else {
           setEmailResults({
             success: false,
@@ -341,13 +356,13 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
             statusUpdates: [],
             responses: []
           });
-        }
 
-        // Show error toast
-        setToastMessage({
-          type: 'danger',
-          text: 'Email search failed: ' + (error.code === 'ECONNABORTED' ? 'Operation timed out' : error.message)
-        });
+          // Show error toast
+          setToastMessage({
+            type: 'danger',
+            text: 'Email search failed: ' + (error.message || 'Unknown error')
+          });
+        }
 
         setProgress(0);
         setProgressMessage('');

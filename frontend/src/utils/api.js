@@ -131,11 +131,17 @@ export const jobsAPI = {
 export const emailsAPI = {
   // Search emails with option to skip global loading indicator
   searchEmails: (params) => longRunningApi.post('/api/emails/search-with-saved-credentials', params,
-    { skipGlobalLoading: true }),
+    {
+      skipGlobalLoading: true,
+      timeout: 300000 // Explicitly set timeout to 5 minutes
+    }),
   getFolders: (credentialId) => api.post('/api/emails/get-folders', { credentialId }),
   importItems: (data) => api.post('/api/emails/import-all', data),
   syncEmails: (params) => longRunningApi.post('/api/emails/sync', params,
-    { skipGlobalLoading: true }),
+    {
+      skipGlobalLoading: true,
+      timeout: 300000 // Explicitly set timeout to 5 minutes
+    }),
   saveCredentials: (data) => api.post('/api/emails/credentials', data),
   getCredentials: () => api.get('/api/emails/credentials'),
   deleteCredentials: (id) => api.delete(`/api/emails/credentials/${id}`)
