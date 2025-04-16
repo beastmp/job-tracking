@@ -38,6 +38,14 @@ const EmailIntegration = ({ onImportJobs }) => {
   // Progress bar states
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState('');
+  const [processingDetails, setProcessingDetails] = useState({
+    emailsTotal: 0,
+    emailsProcessed: 0,
+    foldersTotal: 0,
+    foldersProcessed: 0,
+    enrichmentTotal: 0,
+    enrichmentProcessed: 0
+  });
 
   // Selection states
   const [ignorePreviousImport, setIgnorePreviousImport] = useState(false);
@@ -204,18 +212,32 @@ const EmailIntegration = ({ onImportJobs }) => {
       setProgress(5);
       setProgressMessage('Connecting to email server...');
 
-      // Start progress simulation
-      const progressInterval = simulateProgress('search');
+      // Reset processing details
+      setProcessingDetails({
+        emailsTotal: 0,
+        emailsProcessed: 0,
+        foldersTotal: 0,
+        foldersProcessed: 0,
+        enrichmentTotal: 0,
+        enrichmentProcessed: 0
+      });
 
       const credential = credentials.find(cred => cred._id === credentialId);
 
       if (!credential) {
         setError('Invalid credential selected');
-        clearInterval(progressInterval);
         setProgress(0);
         setProgressMessage('');
         return;
       }
+
+      // Initialize progress display
+      setProgressMessage('Starting email search...');
+      setProcessingDetails(prev => ({
+        ...prev,
+        foldersTotal: credential.searchFolders.length,
+        foldersProcessed: 0
+      }));
 
       // Use the emailsAPI with longer timeout for this operation
       const response = await emailsAPI.searchEmails({
@@ -225,14 +247,16 @@ const EmailIntegration = ({ onImportJobs }) => {
         ignorePreviousImport // Pass the force option to ignore last import time
       });
 
-      // Clear the interval
-      clearInterval(progressInterval);
-
       // Show completion
       setProgress(100);
       setProgressMessage('Search complete!');
 
       setEmailResults(response.data);
+
+      // If we have processing stats, update them
+      if (response.data.processingStats) {
+        setProcessingDetails(response.data.processingStats);
+      }
 
       // Combine all items (applications, status updates, responses) into a single array
       const allItems = [
@@ -240,6 +264,11 @@ const EmailIntegration = ({ onImportJobs }) => {
         ...(response.data.statusUpdates || []).map(item => ({ ...item, type: 'statusUpdate' })),
         ...(response.data.responses || []).map(item => ({ ...item, type: 'response' }))
       ];
+
+      // Show enrichment status if we have pending enrichments
+      if (response.data.pendingEnrichments > 0) {
+        setProgressMessage(`Initial processing complete! ${response.data.pendingEnrichments} jobs will be enriched in the background.`);
+      }
 
       if (allItems.length > 0) {
         setItemsToProcess(allItems);
@@ -251,7 +280,7 @@ const EmailIntegration = ({ onImportJobs }) => {
       setTimeout(() => {
         setProgress(0);
         setProgressMessage('');
-      }, 1000);
+      }, 2000);
     } catch (error) {
       console.error('Error searching emails:', error);
       setEmailResults({
@@ -849,6 +878,43 @@ const EmailIntegration = ({ onImportJobs }) => {
                 <div className="text-center mt-2">
                   <small className="text-muted">{progressMessage}</small>
                 </div>
+
+                {/* Batch processing details */}
+                {(processingDetails.foldersTotal > 0 || processingDetails.emailsTotal > 0 || processingDetails.enrichmentTotal > 0) && (
+                  <div className="mt-3">
+                    <h6 className="text-muted">Processing Details:</h6>
+                    <div className="small">
+                      {processingDetails.foldersTotal > 0 && (
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <div>Email Folders:</div>
+                          <div>{processingDetails.foldersProcessed} / {processingDetails.foldersTotal}</div>
+                        </div>
+                      )}
+
+                      {processingDetails.emailsTotal > 0 && (
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <div>Emails Processed:</div>
+                          <div>{processingDetails.emailsProcessed} / {processingDetails.emailsTotal}</div>
+                        </div>
+                      )}
+
+                      {processingDetails.enrichmentTotal > 0 && (
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <div>LinkedIn Enrichments:</div>
+                          <div>{processingDetails.enrichmentProcessed} / {processingDetails.enrichmentTotal}</div>
+                        </div>
+                      )}
+
+                      {emailResults?.pendingEnrichments > 0 && (
+                        <div className="alert alert-info mt-2 mb-0 p-2 small">
+                          <i className="bi bi-info-circle me-1"></i>
+                          {emailResults.pendingEnrichments} job listings will be enriched in the background.
+                          This data will be available next time you search.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

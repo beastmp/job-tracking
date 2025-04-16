@@ -11,6 +11,12 @@ exports.searchEmailsWithSavedCredentials = async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Content-Type', 'application/json');
 
+    // Get the search configuration to determine total workload
+    const { searchOptions } = await emailService.getImapConfig(credentialId, {
+      ignorePreviousImport,
+      ...req.body
+    });
+
     // Start with an empty response structure
     const results = {
       applications: [],
@@ -20,10 +26,18 @@ exports.searchEmailsWithSavedCredentials = async (req, res) => {
         total: 0,
         new: 0,
         existing: 0
+      },
+      processingStats: {
+        emailsTotal: 0,
+        emailsProcessed: 0,
+        foldersTotal: searchOptions.searchFolders.length,
+        foldersProcessed: 0,
+        enrichmentTotal: 0,
+        enrichmentProcessed: 0
       }
     };
 
-    // Use the chunked search approach
+    // Use the chunked search approach with progress updates
     const searchResults = await emailService.searchEmailsChunked(credentialId, {
       ignorePreviousImport,
       ...req.body

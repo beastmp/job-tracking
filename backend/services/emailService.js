@@ -54,8 +54,18 @@ exports.searchEmailsChunked = async (credentialId, options = {}) => {
   let statusUpdates = [];
   let responses = [];
 
+  // Initialize processing statistics for progress tracking
+  const processingStats = {
+    emailsTotal: 0,
+    emailsProcessed: 0,
+    foldersTotal: searchOptions.searchFolders.length,
+    foldersProcessed: 0,
+    enrichmentTotal: 0,
+    enrichmentProcessed: 0
+  };
+
   // Search emails with batching
-  const results = await searchEmailsInBatches(imapConfig, searchOptions, BATCH_SIZE);
+  const results = await searchEmailsInBatches(imapConfig, searchOptions, BATCH_SIZE, processingStats);
 
   // Combine results
   applications = results.applications;
@@ -65,11 +75,39 @@ exports.searchEmailsChunked = async (credentialId, options = {}) => {
   // Check which items already exist in the database
   const checkedApplications = await exports.checkExistingJobs(applications);
 
-  // Return the results
+  // Process LinkedIn enrichment in batches
+  const enrichedJobs = await linkedInService.processEnrichmentQueue();
+
+  // Update enrichment statistics for tracking
+  processingStats.enrichmentTotal = applications.length;
+  processingStats.enrichmentProcessed = enrichedJobs.length;
+
+  // Count pending enrichments
+  const pendingEnrichments = linkedInService.getPendingEnrichmentCount();
+
+  // Apply enriched data to the application results
+  if (enrichedJobs.length > 0) {
+    enrichedJobs.forEach(enriched => {
+      const applicationIndex = checkedApplications.findIndex(
+        app => app.externalJobId === enriched.externalJobId
+      );
+
+      if (applicationIndex !== -1) {
+        checkedApplications[applicationIndex] = linkedInService.applyEnrichmentToJob(
+          checkedApplications[applicationIndex],
+          enriched.enrichedData
+        );
+      }
+    });
+  }
+
+  // Return the results with processing statistics
   return {
     applications: checkedApplications,
     statusUpdates,
     responses,
+    processingStats,
+    pendingEnrichments,
     stats: {
       total: checkedApplications.length,
       new: checkedApplications.filter(app => !app.exists).length,

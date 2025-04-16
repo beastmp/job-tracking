@@ -10,12 +10,16 @@ const processedJobs = {};
 // Use LinkedIn rate limit config
 const RATE_LIMIT = config.linkedin.rateLimit;
 
+// Set batch size for processing enrichment queue
+const ENRICHMENT_BATCH_SIZE = 3; // Only process a few jobs at a time to avoid timeouts
+
 // Log the rate limit configuration being used
 console.log('LinkedIn rate limit configuration:', {
   requestsPerMinute: RATE_LIMIT.requestsPerMinute,
   maxConsecutiveFailures: RATE_LIMIT.maxConsecutiveFailures,
   standardDelay: RATE_LIMIT.standardDelay + 'ms',
-  backoffDelay: RATE_LIMIT.backoffDelay + 'ms'
+  backoffDelay: RATE_LIMIT.backoffDelay + 'ms',
+  batchSize: ENRICHMENT_BATCH_SIZE
 });
 
 /**
@@ -38,20 +42,24 @@ exports.queueJobForEnrichment = (url, jobData) => {
 };
 
 /**
- * Process the enrichment queue with proper rate limiting
+ * Process the enrichment queue with proper rate limiting and batching
  * @returns {Promise<Object[]>} Array of processed job data with enrichments
  */
 exports.processEnrichmentQueue = async () => {
   if (enrichmentQueue.length === 0) return [];
 
-  console.log(`Processing LinkedIn enrichment queue for ${enrichmentQueue.length} jobs...`);
+  const queueSize = enrichmentQueue.length;
+  console.log(`Processing LinkedIn enrichment queue (batch of max ${ENRICHMENT_BATCH_SIZE} from ${queueSize} total jobs)...`);
 
   const enrichedJobs = [];
   let consecutiveFailures = 0;
 
-  // Process the queue with improved rate limiting
-  for (let i = 0; i < enrichmentQueue.length; i++) {
-    const item = enrichmentQueue[i];
+  // Only process a limited batch of jobs to avoid timeouts
+  const batchSize = Math.min(ENRICHMENT_BATCH_SIZE, enrichmentQueue.length);
+  const currentBatch = enrichmentQueue.splice(0, batchSize);
+
+  // Process the current batch with improved rate limiting
+  for (const item of currentBatch) {
     let retryCurrentItem = false;
     let enrichedData = null;
 
@@ -90,8 +98,10 @@ exports.processEnrichmentQueue = async () => {
         consecutiveFailures++;
         console.log(`LinkedIn API rate limit hit (${consecutiveFailures}/${RATE_LIMIT.maxConsecutiveFailures} failures)`);
 
-        // Flag for retry of the current item (don't increment i)
-        retryCurrentItem = true;
+        // Put the item back in the queue for future processing
+        if (consecutiveFailures < RATE_LIMIT.maxConsecutiveFailures) {
+          enrichmentQueue.unshift(item);
+        }
 
         // If we've hit too many consecutive failures, break out of the loop
         if (consecutiveFailures >= RATE_LIMIT.maxConsecutiveFailures) {
@@ -103,16 +113,12 @@ exports.processEnrichmentQueue = async () => {
         console.log(`Non-rate-limit error: ${error.message}`);
       }
     }
-
-    // If we need to retry the current item, decrement i so the same item is processed again
-    if (retryCurrentItem) {
-      i--;
-    }
   }
 
-  // Clear the queue
-  enrichmentQueue.length = 0;
-  Object.keys(processedJobs).forEach(key => delete processedJobs[key]);
+  console.log(`Batch processing complete. ${enrichmentQueue.length} jobs remaining in queue for future processing.`);
+
+  // Note: we're not clearing the entire queue anymore, only removing processed items
+  // The remaining items will be processed on subsequent requests
 
   return enrichedJobs;
 };
@@ -336,4 +342,12 @@ exports.applyEnrichmentToJob = (job, enrichedData) => {
   }
 
   return updatedJob;
+};
+
+/**
+ * Get the number of pending enrichment jobs in the queue
+ * @returns {number} The number of pending enrichments
+ */
+exports.getPendingEnrichmentCount = () => {
+  return enrichmentQueue.length;
 };
