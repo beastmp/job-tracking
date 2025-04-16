@@ -1,0 +1,55 @@
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build directories
+frontend/build/
+frontend/dist/
+backend/dist/
+
+# Testing
+coverage/
+
+# Production
+build/
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+.thumbs.db
+*.swp
+*.swo
+
+# IDE/Editor folders
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+
+# Temporary files
+tmp/
+temp/
+.cache/
+
+# Uploads directory content but keep directory
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Secrets
+*.pem
+*.key
+*.cert
