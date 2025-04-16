@@ -4,18 +4,6 @@
   "outputDirectory": "frontend/build",
   "installCommand": "npm run install:all",
   "functions": {
-    "api/jobs/stats/index.js": {
-      "maxDuration": 10
-    },
-    "api/jobs/index.js": {
-      "maxDuration": 10
-    },
-    "api/emails/index.js": {
-      "maxDuration": 10
-    },
-    "api/upload/index.js": {
-      "maxDuration": 10
-    },
     "api/index.js": {
       "maxDuration": 10
     }
@@ -29,5 +17,13 @@
     { "src": "/robots.txt", "dest": "/robots.txt" },
     { "src": "/api/(.*)", "dest": "/api" },
     { "src": "/(.*)", "dest": "/index.html" }
-  ]
+  ],
+  "env": {
+    "REACT_APP_API_URL": "https://job-tracking-sable.vercel.app"
+  },
+  "build": {
+    "env": {
+      "REACT_APP_API_URL": "https://job-tracking-sable.vercel.app"
+    }
+  }
 }
