@@ -11,5 +11,13 @@
     "api/**/*": {
       "memory": 1024
     }
+  },
+  "env": {
+    "REACT_APP_API_URL": "https://job-tracking-sable.vercel.app"
+  },
+  "build": {
+    "env": {
+      "REACT_APP_API_URL": "https://job-tracking-sable.vercel.app"
+    }
   }
 }

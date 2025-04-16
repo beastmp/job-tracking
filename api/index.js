@@ -17,6 +17,19 @@ app.use(cors());
 app.use(express.json({ limit: config.server.bodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: config.server.bodyLimit }));
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV,
+    config: {
+      apiUrl: process.env.REACT_APP_API_URL || 'Not set',
+      mongoDbConnected: mongoose.connection.readyState === 1
+    }
+  });
+});
+
 // Use routes
 app.use('/api/jobs', jobRoutes);
 app.use('/api/upload', uploadRoutes);
