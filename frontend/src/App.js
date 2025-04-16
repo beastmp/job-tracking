@@ -773,7 +773,7 @@ function AppMain() {
   const [error, setError] = useState(null);
   const [selectedJob, setSelectedJob] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const { setLoadingMessage } = useLoading();
+  const { setLoading: setContextLoading, setLoadingMessage } = useLoading();
 
   // Define fetchJobs with useCallback to ensure stable reference between renders
   const fetchJobs = useCallback(async () => {
@@ -873,16 +873,16 @@ function AppMain() {
   // Fetch a single job for editing
   const fetchJob = async (jobId) => {
     try {
-      setLoadingMessage('Loading job details...');
+      setContextLoading(true, 'Loading job details...'); // Use context loading instead of local state
       const response = await api.get(`/api/jobs/${jobId}`);
       setSelectedJob(response.data);
       // Clear loading state after job data is fetched
-      setLoadingMessage('');
+      setContextLoading(false); // Turn off global loading spinner
       return response.data;
     } catch (err) {
       setError('Error fetching job details: ' + err.message);
       // Also clear loading state in case of error
-      setLoadingMessage('');
+      setContextLoading(false); // Turn off global loading spinner in case of error
       return null;
     }
   };
