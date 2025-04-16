@@ -876,9 +876,13 @@ function AppMain() {
       setLoadingMessage('Loading job details...');
       const response = await api.get(`/api/jobs/${jobId}`);
       setSelectedJob(response.data);
+      // Clear loading state after job data is fetched
+      setLoadingMessage('');
       return response.data;
     } catch (err) {
       setError('Error fetching job details: ' + err.message);
+      // Also clear loading state in case of error
+      setLoadingMessage('');
       return null;
     }
   };
