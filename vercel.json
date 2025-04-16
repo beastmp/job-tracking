@@ -3,15 +3,34 @@
   "buildCommand": "npm run build",
   "outputDirectory": "frontend/build",
   "installCommand": "npm run install:all",
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/(.*)", "destination": "/index.html" }
-  ],
   "functions": {
-    "api/**/*": {
-      "memory": 1024
+    "api/jobs/stats/index.js": {
+      "maxDuration": 10
+    },
+    "api/jobs/index.js": {
+      "maxDuration": 10
+    },
+    "api/emails/index.js": {
+      "maxDuration": 10
+    },
+    "api/upload/index.js": {
+      "maxDuration": 10
+    },
+    "api/index.js": {
+      "maxDuration": 10
     }
   },
+  "routes": [
+    { "src": "/api/jobs/stats", "dest": "/api/jobs/stats" },
+    { "src": "/api/jobs", "dest": "/api/jobs" },
+    { "src": "/api/jobs/(.*)", "dest": "/api/jobs" },
+    { "src": "/api/emails", "dest": "/api/emails" },
+    { "src": "/api/emails/(.*)", "dest": "/api/emails" },
+    { "src": "/api/upload", "dest": "/api/upload" },
+    { "src": "/api/upload/(.*)", "dest": "/api/upload" },
+    { "src": "/api/(.*)", "dest": "/api" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ],
   "env": {
     "REACT_APP_API_URL": "https://job-tracking-sable.vercel.app"
   },

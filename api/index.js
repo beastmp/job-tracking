@@ -30,6 +30,15 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Root endpoint for API
+app.get('/api', (req, res) => {
+  res.status(200).json({
+    message: 'Job Tracking API is running',
+    version: '1.0.0',
+    endpoints: ['/api/jobs', '/api/emails', '/api/upload', '/api/health']
+  });
+});
+
 // Use routes
 app.use('/api/jobs', jobRoutes);
 app.use('/api/upload', uploadRoutes);
@@ -52,8 +61,15 @@ const connectToDatabase = async () => {
 
 // Serverless handler
 module.exports = async (req, res) => {
-  await connectToDatabase();
+  // Log request for debugging
+  console.log(`[Main Handler] Handling request to ${req.url} with method ${req.method}`);
 
-  // Handle the request with your Express app
-  return app(req, res);
+  try {
+    await connectToDatabase();
+    return app(req, res);
+  } catch (error) {
+    console.error('Error handling request:', error);
+    res.status(500).json({ error: 'Internal Server Error', message: error.message });
+    return;
+  }
 };
