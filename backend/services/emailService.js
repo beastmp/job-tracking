@@ -614,9 +614,10 @@ exports.searchEmailsForJobs = async (imapConfig, options) => {
  * @param {Object} imapConfig - IMAP configuration
  * @param {Object} options - Search options
  * @param {number} batchSize - Maximum number of emails to process per batch
+ * @param {Object} processingStats - Object to track processing statistics
  * @returns {Promise<Object>} Search results
  */
-async function searchEmailsInBatches(imapConfig, options, batchSize = 25) {
+async function searchEmailsInBatches(imapConfig, options, batchSize = 25, processingStats) {
   return new Promise((resolve, reject) => {
     const {
       searchTimeframeDays = 90,
@@ -660,6 +661,12 @@ async function searchEmailsInBatches(imapConfig, options, batchSize = 25) {
 
       const folder = searchFolders[index];
       console.log(`Processing folder: ${folder}`);
+
+      // Update processing stats for folder progress
+      if (processingStats) {
+        processingStats.foldersProcessed = index;
+      }
+
       imap.openBox(folder, true, (err, box) => {
         if (err) {
           console.error(`Error opening folder ${folder}:`, err);
@@ -686,6 +693,11 @@ async function searchEmailsInBatches(imapConfig, options, batchSize = 25) {
 
           console.log(`Found ${results.length} matching emails in ${folder}`);
 
+          // Update processing stats for email counts
+          if (processingStats) {
+            processingStats.emailsTotal += results.length;
+          }
+
           // Process emails in batches
           processBatches(results, 0);
         });
@@ -702,7 +714,7 @@ async function searchEmailsInBatches(imapConfig, options, batchSize = 25) {
           const endIndex = Math.min(startIndex + batchSize, allResults.length);
           const currentBatch = allResults.slice(startIndex, endIndex);
 
-          console.log(`Processing batch ${startIndex/batchSize + 1}: emails ${startIndex+1}-${endIndex} of ${allResults.length}`);
+          console.log(`Processing batch ${Math.floor(startIndex/batchSize) + 1}: emails ${startIndex+1}-${endIndex} of ${allResults.length}`);
 
           // Fetch this batch of emails
           const fetch = imap.fetch(currentBatch, { bodies: '' });
@@ -723,6 +735,12 @@ async function searchEmailsInBatches(imapConfig, options, batchSize = 25) {
                 }
 
                 processedEmails++;
+
+                // Update processing stats for processed emails
+                if (processingStats) {
+                  processingStats.emailsProcessed++;
+                }
+
                 if (processedEmails === currentBatch.length) {
                   // Current batch is complete, process the next batch
                   processBatches(allResults, endIndex);
@@ -748,8 +766,23 @@ async function searchEmailsInBatches(imapConfig, options, batchSize = 25) {
     }
   })
   .then(async (results) => {
+    // Update enrichment statistics before processing
+    if (processingStats) {
+      // Count applications that have LinkedIn URLs for enrichment
+      const linkedInApplications = results.applications.filter(app =>
+        app.website && app.website.includes('linkedin.com/jobs/view')
+      );
+
+      processingStats.enrichmentTotal = linkedInApplications.length;
+    }
+
     // Process the LinkedIn enrichment queue after emails are processed
     const enrichedJobs = await linkedInService.processEnrichmentQueue();
+
+    // Update enrichment processed count
+    if (processingStats) {
+      processingStats.enrichmentProcessed = enrichedJobs.length;
+    }
 
     // Apply enriched data to the application results
     if (enrichedJobs.length > 0) {

@@ -10,8 +10,8 @@ const processedJobs = {};
 // Use LinkedIn rate limit config
 const RATE_LIMIT = config.linkedin.rateLimit;
 
-// Set batch size for processing enrichment queue
-const ENRICHMENT_BATCH_SIZE = 3; // Only process a few jobs at a time to avoid timeouts
+// Set batch size for processing enrichment queue - reduced to avoid timeouts
+const ENRICHMENT_BATCH_SIZE = 2; // Reduced from 3 to 2 to prevent timeouts
 
 // Log the rate limit configuration being used
 console.log('LinkedIn rate limit configuration:', {
