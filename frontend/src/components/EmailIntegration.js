@@ -40,7 +40,6 @@ const EmailIntegration = ({ onImportJobs }) => {
   const [progressMessage, setProgressMessage] = useState('');
 
   // Selection states
-  const [selectedCredential, setSelectedCredential] = useState('');
   const [ignorePreviousImport, setIgnorePreviousImport] = useState(false);
   const [selectedItems, setSelectedItems] = useState([]);
 
@@ -794,10 +793,7 @@ const EmailIntegration = ({ onImportJobs }) => {
 
                           <button
                             className="btn btn-sm btn-outline-success"
-                            onClick={() => {
-                              setSelectedCredential(credential._id);
-                              searchEmails(credential._id);
-                            }}
+                            onClick={() => searchEmails(credential._id)}
                             disabled={emailSearchLoading}
                           >
                             Search
@@ -805,10 +801,7 @@ const EmailIntegration = ({ onImportJobs }) => {
 
                           <button
                             className="btn btn-sm btn-outline-info"
-                            onClick={() => {
-                              setSelectedCredential(credential._id);
-                              runSync(credential._id);
-                            }}
+                            onClick={() => runSync(credential._id)}
                             disabled={emailSearchLoading}
                           >
                             Sync

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { jobsAPI } from '../utils/api';
 
@@ -14,8 +14,6 @@ const ApplicationsPage = ({ jobs, onDeleteJob, onUpdateStatus, onBulkDeleteJobs 
   const [searchTerm, setSearchTerm] = useState('');
   const [enrichingJobs, setEnrichingJobs] = useState(false);
   const [enrichmentMessage, setEnrichmentMessage] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(ITEMS_PER_PAGE);
 
   // Handle select all checkbox
   const handleSelectAll = () => {

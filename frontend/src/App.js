@@ -481,7 +481,7 @@ const ExcelUpload = ({ onImportJobs }) => {
         URL.revokeObjectURL(templateUrl);
       }
     };
-  }, []);
+  }, [templateUrl]);
 
   const handleFileChange = (e) => {
     if (e.target.files.length > 0) {
@@ -706,7 +706,7 @@ function EditJobWrapper({ selectedJob, fetchJob, handleUpdateJob }) {
   useEffect(() => {
     const id = window.location.pathname.split('/').pop();
     if (id) fetchJob(id);
-  }, [window.location.pathname]);
+  }, [fetchJob]);
 
   return selectedJob ? (
     <JobForm job={selectedJob} onSubmit={handleUpdateJob} isEditing={true} />
