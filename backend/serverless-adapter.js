@@ -12,8 +12,40 @@ const emailRoutes = require('./routes/emails');
 // Create Express app - we're reusing most of the code from server.js
 const app = express();
 
+// CORS configuration for multiple domains
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl requests)
+    if (!origin) return callback(null, true);
+
+    // Log the origin for debugging purposes
+    console.log('Request origin:', origin);
+
+    // For now, allow all origins while we identify all domains
+    // callback(null, true);
+
+    // Once all domains are identified, you can use a whitelist approach:
+    const whitelist = [
+      'https://job-tracking-michael-palmers-projects-7bed5f67.vercel.app',
+      'https://job-tracking-git-main-michael-palmers-projects-7bed5f67.vercel.app',
+      'https://job-tracking-sable.vercel.app',
+    ];
+
+    if (whitelist.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log('CORS blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+
+  },
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+  credentials: true,
+  optionsSuccessStatus: 204
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json({ limit: config.server.bodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: config.server.bodyLimit }));
 

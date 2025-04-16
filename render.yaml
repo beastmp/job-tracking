@@ -1,0 +1,22 @@
+{
+  "name": "job-tracking",
+  "type": "web",
+  "env": "node",
+  "buildCommand": "cd frontend && npm install && npm run build && cd ../backend && npm install",
+  "startCommand": "node backend/server.js",
+  "envVars": [
+    {
+      "key": "MONGODB_URI",
+      "sync": false
+    },
+    {
+      "key": "PORT",
+      "value": "10000"
+    },
+    {
+      "key": "NODE_ENV",
+      "value": "production"
+    }
+  ],
+  "autoDeploy": true
+}
