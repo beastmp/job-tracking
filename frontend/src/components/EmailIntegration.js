@@ -234,6 +234,7 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
       setItemsToProcess([]);
       setProgress(5);
       setProgressMessage('Connecting to email server...');
+      setError(''); // Clear any previous errors
 
       // Reset processing details
       setProcessingDetails({
@@ -254,6 +255,12 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
         return;
       }
 
+      // Show toast message to indicate a long-running operation
+      setToastMessage({
+        type: 'info',
+        text: 'Starting email search - this may take several minutes for large mailboxes'
+      });
+
       // Initialize progress display
       setProgressMessage('Starting email search...');
       setProcessingDetails(prev => ({
@@ -262,53 +269,94 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
         foldersProcessed: 0
       }));
 
-      // Use the emailsAPI with longer timeout for this operation
-      const response = await emailsAPI.searchEmails({
-        credentialId,
-        searchTimeframeDays: credential.searchTimeframeDays,
-        searchFolders: credential.searchFolders,
-        ignorePreviousImport // Pass the force option to ignore last import time
-      });
+      // Start progress simulation for better UX
+      const progressInterval = simulateProgress('search');
 
-      // Show completion
-      setProgress(100);
-      setProgressMessage('Search complete!');
+      try {
+        // Use the emailsAPI with longer timeout for this operation
+        const response = await emailsAPI.searchEmails({
+          credentialId,
+          searchTimeframeDays: credential.searchTimeframeDays,
+          searchFolders: credential.searchFolders,
+          ignorePreviousImport // Pass the force option to ignore last import time
+        });
 
-      setEmailResults(response.data);
+        // Clear the interval once we have a response
+        clearInterval(progressInterval);
 
-      // If we have processing stats, update them
-      if (response.data.processingStats) {
-        setProcessingDetails(response.data.processingStats);
-      }
+        // Show completion
+        setProgress(100);
+        setProgressMessage('Search complete!');
 
-      // Combine all items (applications, status updates, responses) into a single array
-      const allItems = [
-        ...(response.data.applications || []).map(item => ({ ...item, type: 'application' })),
-        ...(response.data.statusUpdates || []).map(item => ({ ...item, type: 'statusUpdate' })),
-        ...(response.data.responses || []).map(item => ({ ...item, type: 'response' }))
-      ];
+        setEmailResults(response.data);
 
-      // Show enrichment status if we have pending enrichments
-      if (response.data.pendingEnrichments > 0) {
-        setProgressMessage(`Initial processing complete! ${response.data.pendingEnrichments} jobs will be enriched in the background.`);
-      }
+        // If we have processing stats, update them
+        if (response.data.processingStats) {
+          setProcessingDetails(response.data.processingStats);
+        }
 
-      if (allItems.length > 0) {
-        setItemsToProcess(allItems);
-        // Initially select all non-existing items
-        setSelectedItems(allItems.filter(item => !item.exists).map(item => item.id || item._id));
-      }
+        // Combine all items (applications, status updates, responses) into a single array
+        const allItems = [
+          ...(response.data.applications || []).map(item => ({ ...item, type: 'application' })),
+          ...(response.data.statusUpdates || []).map(item => ({ ...item, type: 'statusUpdate' })),
+          ...(response.data.responses || []).map(item => ({ ...item, type: 'response' }))
+        ];
 
-      // Reset progress after a moment
-      setTimeout(() => {
+        // Show enrichment status if we have pending enrichments
+        if (response.data.pendingEnrichments > 0) {
+          setProgressMessage(`Initial processing complete! ${response.data.pendingEnrichments} jobs will be enriched in the background.`);
+        }
+
+        if (allItems.length > 0) {
+          setItemsToProcess(allItems);
+          // Initially select all non-existing items
+          setSelectedItems(allItems.filter(item => !item.exists).map(item => item.id || item._id));
+        }
+
+        // Reset progress after a moment
+        setTimeout(() => {
+          setProgress(0);
+          setProgressMessage('');
+        }, 2000);
+      } catch (error) {
+        // Clear the interval if there's an error
+        clearInterval(progressInterval);
+
+        console.error('Error searching emails:', error);
+
+        // Set a more informative error message
+        if (error.code === 'ECONNABORTED') {
+          setEmailResults({
+            success: false,
+            message: 'The email search operation timed out. Try searching fewer folders or a shorter time period.',
+            applications: [],
+            statusUpdates: [],
+            responses: []
+          });
+        } else {
+          setEmailResults({
+            success: false,
+            message: error.message || 'Error searching emails',
+            applications: [],
+            statusUpdates: [],
+            responses: []
+          });
+        }
+
+        // Show error toast
+        setToastMessage({
+          type: 'danger',
+          text: 'Email search failed: ' + (error.code === 'ECONNABORTED' ? 'Operation timed out' : error.message)
+        });
+
         setProgress(0);
         setProgressMessage('');
-      }, 2000);
+      }
     } catch (error) {
-      console.error('Error searching emails:', error);
+      console.error('Error in searchEmails outer try block:', error);
       setEmailResults({
         success: false,
-        message: error.message || 'Error searching emails: The operation timed out. Try again with fewer folders or a shorter time period.',
+        message: error.message || 'Error searching emails: An unexpected error occurred.',
         applications: [],
         statusUpdates: [],
         responses: []
