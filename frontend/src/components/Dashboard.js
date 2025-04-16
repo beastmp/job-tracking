@@ -34,7 +34,8 @@ const Dashboard = ({ jobs }) => {
   const [autoImportResult, setAutoImportResult] = useState(null);
 
   useEffect(() => {
-    if (jobs.length > 0) {
+    // Make sure jobs is an array before calculating stats
+    if (Array.isArray(jobs) && jobs.length > 0) {
       calculateStats(jobs);
     }
 
@@ -94,48 +95,60 @@ const Dashboard = ({ jobs }) => {
     }
   };
 
-  const calculateStats = (jobs) => {
+  const calculateStats = (jobsArray) => {
+    // Ensure we're working with an array
+    if (!Array.isArray(jobsArray)) {
+      console.error("Expected jobs to be an array but received:", jobsArray);
+      return;
+    }
+
     // Total jobs
-    const totalJobs = jobs.length;
+    const totalJobs = jobsArray.length;
 
     // Active jobs (not rejected)
-    const activeJobs = jobs.filter(job => job.response !== 'Rejected').length;
+    const activeJobs = jobsArray.filter(job => job && job.response !== 'Rejected').length;
 
     // Response rate
-    const respondedJobs = jobs.filter(job => job.responded).length;
+    const respondedJobs = jobsArray.filter(job => job && job.responded).length;
     const responseRate = totalJobs > 0 ? (respondedJobs / totalJobs) * 100 : 0;
 
     // Jobs by status
-    const byStatus = jobs.reduce((acc, job) => {
+    const byStatus = jobsArray.reduce((acc, job) => {
+      if (!job) return acc;
       const status = job.response || 'No Response';
       acc[status] = (acc[status] || 0) + 1;
       return acc;
     }, {});
 
     // Jobs by source
-    const bySource = jobs.reduce((acc, job) => {
+    const bySource = jobsArray.reduce((acc, job) => {
+      if (!job) return acc;
       const source = job.source || 'Other';
       acc[source] = (acc[source] || 0) + 1;
       return acc;
     }, {});
 
     // Jobs by location type
-    const byLocationType = jobs.reduce((acc, job) => {
+    const byLocationType = jobsArray.reduce((acc, job) => {
+      if (!job) return acc;
       const locationType = job.locationType || 'Not Specified';
       acc[locationType] = (acc[locationType] || 0) + 1;
       return acc;
     }, {});
 
     // Jobs by employment type
-    const byEmploymentType = jobs.reduce((acc, job) => {
+    const byEmploymentType = jobsArray.reduce((acc, job) => {
+      if (!job) return acc;
       const employmentType = job.employmentType || 'Not Specified';
       acc[employmentType] = (acc[employmentType] || 0) + 1;
       return acc;
     }, {});
 
     // Jobs by month
-    const byMonth = jobs.reduce((acc, job) => {
+    const byMonth = jobsArray.reduce((acc, job) => {
+      if (!job || !job.applied) return acc;
       const date = new Date(job.applied);
+      if (isNaN(date.getTime())) return acc; // Skip invalid dates
       const monthYear = `${date.toLocaleString('default', { month: 'short' })} ${date.getFullYear()}`;
       acc[monthYear] = (acc[monthYear] || 0) + 1;
       return acc;
@@ -143,12 +156,13 @@ const Dashboard = ({ jobs }) => {
 
     // Average response time (in days) for jobs that received a response
     let avgResponseTime = 0;
-    const jobsWithResponse = jobs.filter(job => job.responded && job.applied);
+    const jobsWithResponse = jobsArray.filter(job => job && job.responded && job.applied);
 
     if (jobsWithResponse.length > 0) {
       const totalResponseTime = jobsWithResponse.reduce((total, job) => {
         const appliedDate = new Date(job.applied);
         const respondedDate = new Date(job.responded);
+        if (isNaN(appliedDate.getTime()) || isNaN(respondedDate.getTime())) return total;
         const diffTime = Math.abs(respondedDate - appliedDate);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         return total + diffDays;
@@ -158,7 +172,9 @@ const Dashboard = ({ jobs }) => {
     }
 
     // Most recent activity
-    const sortedJobs = [...jobs].sort((a, b) => new Date(b.applied) - new Date(a.applied));
+    // Make a safe copy and ensure all items have valid dates before sorting
+    const validJobs = jobsArray.filter(job => job && job.applied && !isNaN(new Date(job.applied).getTime()));
+    const sortedJobs = [...validJobs].sort((a, b) => new Date(b.applied) - new Date(a.applied));
     const recentActivity = sortedJobs.slice(0, 5);
 
     setStats({
