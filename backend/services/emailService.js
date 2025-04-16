@@ -37,6 +37,48 @@ exports.searchEmails = async (credentialId, options = {}) => {
 };
 
 /**
+ * Search emails using a credential ID with a chunked approach to avoid timeouts
+ * @param {string} credentialId - Credential ID
+ * @param {Object} options - Search options
+ * @returns {Promise<Object>} Search results
+ */
+exports.searchEmailsChunked = async (credentialId, options = {}) => {
+  // Get IMAP configuration
+  const { imapConfig, searchOptions, credentials } = await exports.getImapConfig(credentialId, options);
+
+  // Maximum number of emails to process in a batch
+  const BATCH_SIZE = 25;
+
+  // Initialize results
+  let applications = [];
+  let statusUpdates = [];
+  let responses = [];
+
+  // Search emails with batching
+  const results = await searchEmailsInBatches(imapConfig, searchOptions, BATCH_SIZE);
+
+  // Combine results
+  applications = results.applications;
+  statusUpdates = results.statusUpdates;
+  responses = results.responses;
+
+  // Check which items already exist in the database
+  const checkedApplications = await exports.checkExistingJobs(applications);
+
+  // Return the results
+  return {
+    applications: checkedApplications,
+    statusUpdates,
+    responses,
+    stats: {
+      total: checkedApplications.length,
+      new: checkedApplications.filter(app => !app.exists).length,
+      existing: checkedApplications.filter(app => app.exists).length
+    }
+  };
+};
+
+/**
  * Get available folders for an email account
  * @param {string} credentialId - Credential ID
  * @returns {Promise<Array>} List of folders
@@ -528,6 +570,305 @@ exports.searchEmailsForJobs = async (imapConfig, options) => {
     return results;
   });
 };
+
+/**
+ * Search emails in batches to avoid timeouts
+ * @param {Object} imapConfig - IMAP configuration
+ * @param {Object} options - Search options
+ * @param {number} batchSize - Maximum number of emails to process per batch
+ * @returns {Promise<Object>} Search results
+ */
+async function searchEmailsInBatches(imapConfig, options, batchSize = 25) {
+  return new Promise((resolve, reject) => {
+    const {
+      searchTimeframeDays = 90,
+      searchFolders = ['INBOX'],
+      searchDate
+    } = options;
+
+    // Use provided search date or calculate based on timeframe
+    const since = searchDate || new Date();
+    if (!searchDate) {
+      since.setDate(since.getDate() - searchTimeframeDays);
+    }
+
+    const applications = [];
+    const statusUpdates = [];
+    const responses = [];
+
+    // Create IMAP connection
+    const imap = new Imap(imapConfig);
+
+    imap.once('error', err => {
+      reject(new Error(`IMAP connection error: ${err.message}`));
+    });
+
+    imap.once('ready', () => {
+      // Process each folder sequentially
+      processNextFolder(0);
+    });
+
+    // Start IMAP connection
+    imap.connect();
+
+    // Function to process folders one by one
+    function processNextFolder(index) {
+      if (index >= searchFolders.length) {
+        // All folders processed, return results
+        imap.end();
+        resolve({ applications, statusUpdates, responses });
+        return;
+      }
+
+      const folder = searchFolders[index];
+      console.log(`Processing folder: ${folder}`);
+      imap.openBox(folder, true, (err, box) => {
+        if (err) {
+          console.error(`Error opening folder ${folder}:`, err);
+          // Skip to next folder
+          processNextFolder(index + 1);
+          return;
+        }
+
+        // Build search criteria similar to the original function
+        const searchCriteria = buildSearchCriteria(since);
+
+        imap.search(searchCriteria, (err, results) => {
+          if (err) {
+            console.error(`Error searching in folder ${folder}:`, err);
+            processNextFolder(index + 1);
+            return;
+          }
+
+          if (!results || results.length === 0) {
+            // No results in this folder, move to next
+            processNextFolder(index + 1);
+            return;
+          }
+
+          console.log(`Found ${results.length} matching emails in ${folder}`);
+
+          // Process emails in batches
+          processBatches(results, 0);
+        });
+
+        // Process results in batches to avoid timeouts
+        function processBatches(allResults, startIndex) {
+          if (startIndex >= allResults.length) {
+            // All batches processed, move to next folder
+            processNextFolder(index + 1);
+            return;
+          }
+
+          // Get the current batch of results
+          const endIndex = Math.min(startIndex + batchSize, allResults.length);
+          const currentBatch = allResults.slice(startIndex, endIndex);
+
+          console.log(`Processing batch ${startIndex/batchSize + 1}: emails ${startIndex+1}-${endIndex} of ${allResults.length}`);
+
+          // Fetch this batch of emails
+          const fetch = imap.fetch(currentBatch, { bodies: '' });
+          let processedEmails = 0;
+
+          fetch.on('message', (msg, seqno) => {
+            msg.on('body', stream => {
+              simpleParser(stream, async (err, email) => {
+                if (err) {
+                  console.error(`Error parsing email:`, err);
+                } else {
+                  try {
+                    // Use the same email processing logic as before
+                    processEmail(email, applications, statusUpdates, responses);
+                  } catch (error) {
+                    console.error('Error processing email:', error);
+                  }
+                }
+
+                processedEmails++;
+                if (processedEmails === currentBatch.length) {
+                  // Current batch is complete, process the next batch
+                  processBatches(allResults, endIndex);
+                }
+              });
+            });
+          });
+
+          fetch.once('error', err => {
+            console.error(`Error fetching batch of emails:`, err);
+            // Even if there's an error, try to move on to the next batch
+            processBatches(allResults, endIndex);
+          });
+
+          fetch.once('end', () => {
+            // If we didn't process any emails, move to next batch
+            if (processedEmails === 0) {
+              processBatches(allResults, endIndex);
+            }
+          });
+        }
+      });
+    }
+  })
+  .then(async (results) => {
+    // Process the LinkedIn enrichment queue after emails are processed
+    const enrichedJobs = await linkedInService.processEnrichmentQueue();
+
+    // Apply enriched data to the application results
+    if (enrichedJobs.length > 0) {
+      enrichedJobs.forEach(enriched => {
+        const applicationIndex = results.applications.findIndex(
+          app => app.externalJobId === enriched.externalJobId
+        );
+
+        if (applicationIndex !== -1) {
+          results.applications[applicationIndex] = linkedInService.applyEnrichmentToJob(
+            results.applications[applicationIndex],
+            enriched.enrichedData
+          );
+        }
+      });
+    }
+
+    return results;
+  });
+}
+
+/**
+ * Process a single email to identify job applications, status updates, or responses
+ * @param {Object} email - The parsed email object
+ * @param {Array} applications - Array to collect application data
+ * @param {Array} statusUpdates - Array to collect status update data
+ * @param {Array} responses - Array to collect response data
+ */
+function processEmail(email, applications, statusUpdates, responses) {
+  // Get email metadata
+  const subject = email.subject || '';
+  const fromAddress = email.from ? email.from.text || '' : '';
+  const textContent = email.text || '';
+  const htmlContent = email.html || '';
+
+  // 1. LinkedIn emails
+  if (fromAddress.includes('jobs-noreply@linkedin.com') ||
+      fromAddress.includes('@linkedin.com')) {
+    // LinkedIn job application confirmation
+    if (subject.includes('application was sent')) {
+      const jobData = parseLinkedInJobApplication(email);
+      if (jobData) {
+        applications.push(jobData);
+      }
+    }
+    // LinkedIn status update emails
+    else if (subject.includes('was viewed by') ||
+            subject.includes('is in review') ||
+            subject.includes('is being considered') ||
+            subject.includes('application status')) {
+      const statusUpdate = parseLinkedInStatusEmail(email);
+      if (statusUpdate) {
+        statusUpdates.push(statusUpdate);
+      }
+    }
+    // LinkedIn response emails
+    else if (subject.includes('your application to') ||
+            subject.includes('Your application to') ||
+            subject.includes('update on your application') ||
+            subject.includes('Update on your application') ||
+            subject.includes('your update from') ||
+            subject.includes('Your update from') ||
+            subject.includes('response to your application') ||
+            subject.includes('Response to your application')) {
+      const response = parseLinkedInResponseEmail(email);
+      if (response) {
+        responses.push(response);
+      }
+    }
+  }
+  // 2. General application confirmation emails (non-LinkedIn)
+  else if (subject.match(/application received|application (is )?complete|received your application|thank you for (your )?appl(y|ication|ying)|we have received your application|we received your application/i)) {
+    const jobData = parseGenericApplicationEmail(email);
+    if (jobData) {
+      applications.push(jobData);
+    }
+  }
+  // 3. General rejection/response emails (non-LinkedIn)
+  else if (subject.match(/update|status|thank you for your interest|unfortunately|not moving forward|decision/i) &&
+           (textContent.match(/unfortunately|not (a )?match|not moving forward|other candidates|regret to inform|thank you for your interest/i) ||
+            htmlContent.match(/unfortunately|not (a )?match|not moving forward|other candidates|regret to inform|thank you for your interest/i))) {
+    const response = parseGenericResponseEmail(email, 'Rejected');
+    if (response) {
+      responses.push(response);
+    }
+  }
+}
+
+/**
+ * Build the search criteria for email queries
+ * @param {Date} since - Date to search from
+ * @returns {Array} IMAP search criteria
+ */
+function buildSearchCriteria(since) {
+  // Create a chain of OR conditions for FROM criteria
+  let fromCriteria = ['FROM', 'jobs-noreply@linkedin.com'];
+
+  const fromOptions = [
+    'careers@',
+    'talent@',
+    'recruiting@',
+    'hr@',
+    'no-reply@hire.lever.co',
+    'notification@',
+    '@greenhouse.io',
+    'do_not_reply@clearcompany.com',
+    'donotreply@',
+    'no-reply@',
+    'noreply@',
+    'applications@',
+    'recruitment@',
+    'talent-acquisition@'
+  ];
+
+  // Chain OR conditions for FROM
+  for (const fromOption of fromOptions) {
+    fromCriteria = ['OR', fromCriteria, ['FROM', fromOption]];
+  }
+
+  // Create a chain of OR conditions for SUBJECT criteria
+  let subjectCriteria = ['SUBJECT', 'application'];
+
+  const subjectOptions = [
+    'Application',
+    'applied',
+    'Applied',
+    'job',
+    'Job',
+    'position',
+    'Position',
+    'career',
+    'Career',
+    'thank you',
+    'Thank you',
+    'received',
+    'Received',
+    'viewed',
+    'Viewed',
+    'interview',
+    'Interview',
+    'status',
+    'Status',
+    'update',
+    'Update'
+  ];
+
+  // Chain OR conditions for SUBJECT
+  for (const subjectOption of subjectOptions) {
+    subjectCriteria = ['OR', subjectCriteria, ['SUBJECT', subjectOption]];
+  }
+
+  // Combine all criteria
+  return [
+    ['OR', fromCriteria, subjectCriteria],
+    ['SINCE', since]
+  ];
+}
 
 /**
  * Get available folders from email account

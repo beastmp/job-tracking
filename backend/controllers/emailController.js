@@ -6,17 +6,34 @@ exports.searchEmailsWithSavedCredentials = async (req, res) => {
   try {
     const { credentialId, ignorePreviousImport = false } = req.body;
 
-    // Use the service to search emails
-    const results = await emailService.searchEmails(credentialId, {
+    // Set timeout headers to prevent Vercel from terminating the connection prematurely
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Content-Type', 'application/json');
+
+    // Start with an empty response structure
+    const results = {
+      applications: [],
+      statusUpdates: [],
+      responses: [],
+      stats: {
+        total: 0,
+        new: 0,
+        existing: 0
+      }
+    };
+
+    // Use the chunked search approach
+    const searchResults = await emailService.searchEmailsChunked(credentialId, {
       ignorePreviousImport,
       ...req.body
     });
 
-    // Return results
+    // Return the complete results
     res.status(200).json({
       success: true,
-      message: `Found ${results.applications.length} job applications, ${results.statusUpdates.length} status updates, and ${results.responses.length} responses in your emails`,
-      ...results
+      message: `Found ${searchResults.applications.length} job applications, ${searchResults.statusUpdates.length} status updates, and ${searchResults.responses.length} responses in your emails`,
+      ...searchResults
     });
   } catch (error) {
     handleApiError(error, res, 'Error searching emails');
