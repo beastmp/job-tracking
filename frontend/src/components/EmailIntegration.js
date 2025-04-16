@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import api from '../utils/api';
+import api, { emailsAPI } from '../utils/api';
 
 // Get default configuration from environment variables with fallbacks
 const DEFAULT_SEARCH_TIMEFRAME_DAYS = parseInt(process.env.REACT_APP_DEFAULT_SEARCH_TIMEFRAME_DAYS || '90', 10);
@@ -217,8 +217,8 @@ const EmailIntegration = ({ onImportJobs }) => {
         return;
       }
 
-      // Fix the API endpoint path - remove the redundant "/api" prefix
-      const response = await api.post(`/api/emails/search-with-saved-credentials`, {
+      // Use the emailsAPI with longer timeout for this operation
+      const response = await emailsAPI.searchEmails({
         credentialId,
         searchTimeframeDays: credential.searchTimeframeDays,
         searchFolders: credential.searchFolders,
@@ -256,7 +256,7 @@ const EmailIntegration = ({ onImportJobs }) => {
       console.error('Error searching emails:', error);
       setEmailResults({
         success: false,
-        message: error.response?.data?.message || 'Error searching emails',
+        message: error.message || 'Error searching emails: The operation timed out. Try again with fewer folders or a shorter time period.',
         applications: [],
         statusUpdates: [],
         responses: []
@@ -349,8 +349,8 @@ const EmailIntegration = ({ onImportJobs }) => {
       // Start progress simulation
       const progressInterval = simulateProgress('sync');
 
-      // Fix the API endpoint path
-      const response = await api.post(`/api/emails/sync`, {
+      // Use the emailsAPI with longer timeout for this operation
+      const response = await emailsAPI.syncEmails({
         credentialId,
         ignorePreviousImport
       });
@@ -385,7 +385,7 @@ const EmailIntegration = ({ onImportJobs }) => {
       console.error('Error with sync operation:', error);
       setEmailResults({
         success: false,
-        message: error.response?.data?.message || 'Error with sync operation',
+        message: error.message || 'Error with sync operation: The operation timed out. Try again with fewer folders or a shorter time period.',
         applications: [],
         statusUpdates: [],
         responses: []
