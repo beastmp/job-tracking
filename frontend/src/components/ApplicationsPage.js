@@ -2,9 +2,6 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { jobsAPI } from '../utils/api';
 
-// Get pagination settings from environment variables
-const ITEMS_PER_PAGE = parseInt(process.env.REACT_APP_ITEMS_PER_PAGE || '10', 10);
-
 const ApplicationsPage = ({ jobs, onDeleteJob, onUpdateStatus, onBulkDeleteJobs }) => {
   const [selectedJobs, setSelectedJobs] = useState({});
   const [selectAll, setSelectAll] = useState(false);
