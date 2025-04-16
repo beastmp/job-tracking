@@ -3,23 +3,106 @@ import axios from 'axios';
 // Get API URL from environment variable, or use relative path in development
 const API_URL = process.env.REACT_APP_API_URL || '';
 
-// Create axios instance with base URL and default configs
-const api = axios.create({
-  baseURL: API_URL,
-  timeout: parseInt(process.env.REACT_APP_API_TIMEOUT || '120000', 10), // Increase timeout to 2 minutes
-  headers: {
-    'Content-Type': 'application/json'
-  }
-});
+// Function to create API with interceptors for loading states
+const createApiInstance = (timeout = 120000) => {
+  const instance = axios.create({
+    baseURL: API_URL,
+    timeout: parseInt(process.env.REACT_APP_API_TIMEOUT || timeout.toString(), 10),
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  });
 
-// Create a special instance with longer timeout for email operations
-export const longRunningApi = axios.create({
-  baseURL: API_URL,
-  timeout: 300000, // 5 minutes for email operations
-  headers: {
-    'Content-Type': 'application/json'
+  // We'll add the loading interceptors when we configure the instance with setLoadingHandlers
+  return instance;
+};
+
+// Create axios instances with base URL and default configs
+const api = createApiInstance();
+export const longRunningApi = createApiInstance(300000); // 5 minutes for email operations
+
+// Track all active requests to manage loading states
+let activeRequests = 0;
+let loadingHandlers = null;
+
+// Function to add loading handlers to the API instances
+export const setLoadingHandlers = (handlers) => {
+  if (!handlers) return;
+
+  loadingHandlers = handlers;
+
+  // Add interceptors to both API instances
+  const setupInterceptors = (instance) => {
+    // Request interceptor
+    instance.interceptors.request.use(
+      config => {
+        // Increment the active requests counter
+        activeRequests++;
+
+        // If this is the first active request, show the loading indicator
+        if (activeRequests === 1 && loadingHandlers.setLoading) {
+          loadingHandlers.setLoading(true);
+        }
+
+        return config;
+      },
+      error => {
+        // Handle request error
+        activeRequests--;
+        if (activeRequests === 0 && loadingHandlers.setLoading) {
+          loadingHandlers.setLoading(false);
+        }
+        return Promise.reject(error);
+      }
+    );
+
+    // Response interceptor
+    instance.interceptors.response.use(
+      response => {
+        // Decrement the active requests counter
+        activeRequests--;
+
+        // If there are no more active requests, hide the loading indicator
+        if (activeRequests === 0 && loadingHandlers.setLoading) {
+          loadingHandlers.setLoading(false);
+        }
+
+        return response;
+      },
+      error => {
+        // Handle response error
+        activeRequests--;
+        if (activeRequests === 0 && loadingHandlers.setLoading) {
+          loadingHandlers.setLoading(false);
+        }
+        return Promise.reject(error);
+      }
+    );
+  };
+
+  setupInterceptors(api);
+  setupInterceptors(longRunningApi);
+};
+
+// Manually control loading state (for operations not using the API)
+export const manualLoadingStart = (message = '', progress = 0) => {
+  if (loadingHandlers && loadingHandlers.setLoading) {
+    loadingHandlers.setLoading(true, message, progress);
   }
-});
+};
+
+export const manualLoadingUpdate = (message = '', progress = 0) => {
+  if (loadingHandlers) {
+    if (loadingHandlers.setLoadingMessage) loadingHandlers.setLoadingMessage(message);
+    if (loadingHandlers.setLoadingProgress) loadingHandlers.setLoadingProgress(progress);
+  }
+};
+
+export const manualLoadingEnd = () => {
+  if (loadingHandlers && loadingHandlers.setLoading) {
+    loadingHandlers.setLoading(false);
+  }
+};
 
 export default api;
 

@@ -8,7 +8,7 @@ import api from '../utils/api';
 // Register ChartJS components
 ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
-const Dashboard = ({ jobs }) => {
+const Dashboard = ({ jobs, refreshData }) => {
   const [stats, setStats] = useState({
     totalJobs: 0,
     activeJobs: 0,
@@ -82,8 +82,10 @@ const Dashboard = ({ jobs }) => {
         importedCount: response.data.importedCount
       });
 
-      // Refresh the job list - this would need to be handled in the parent component
-      // You might need to call a callback function passed as a prop
+      // Refresh the job list using the new refreshData function
+      if (refreshData) {
+        refreshData();
+      }
     } catch (error) {
       console.error('Error during auto-import:', error);
       setAutoImportResult({

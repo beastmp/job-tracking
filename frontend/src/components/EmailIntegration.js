@@ -6,7 +6,7 @@ import api, { emailsAPI } from '../utils/api';
 const DEFAULT_SEARCH_TIMEFRAME_DAYS = parseInt(process.env.REACT_APP_DEFAULT_SEARCH_TIMEFRAME_DAYS || '90', 10);
 const DEFAULT_EMAIL_FOLDERS = ['INBOX'];
 
-const EmailIntegration = ({ onImportJobs }) => {
+const EmailIntegration = ({ onImportJobs, refreshData }) => {
   // Credential management state
   const [credentials, setCredentials] = useState([]);
   const [formData, setFormData] = useState({
@@ -51,9 +51,23 @@ const EmailIntegration = ({ onImportJobs }) => {
   const [ignorePreviousImport, setIgnorePreviousImport] = useState(false);
   const [selectedItems, setSelectedItems] = useState([]);
 
+  // Feedback toast for user actions
+  const [toastMessage, setToastMessage] = useState(null);
+
   useEffect(() => {
     fetchCredentials();
   }, []);
+
+  // Toast message auto-hide effect
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => {
+        setToastMessage(null);
+      }, 5000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   // Fetch stored email credentials
   const fetchCredentials = async () => {
@@ -114,11 +128,17 @@ const EmailIntegration = ({ onImportJobs }) => {
       try {
         // Fix the API endpoint path
         await api.delete(`/api/emails/credentials/${id}`);
-        setSuccessMessage('Credentials deleted successfully');
+        setToastMessage({
+          type: 'success',
+          text: 'Credentials deleted successfully'
+        });
         fetchCredentials();
       } catch (error) {
         console.error('Error deleting credentials:', error);
-        setError('Failed to delete credentials');
+        setToastMessage({
+          type: 'danger',
+          text: 'Failed to delete credentials'
+        });
       }
     }
   };
@@ -146,7 +166,10 @@ const EmailIntegration = ({ onImportJobs }) => {
       // Fix the API endpoint path
       await api.post(`/api/emails/credentials`, formData);
 
-      setSuccessMessage('Email credentials saved successfully');
+      setToastMessage({
+        type: 'success',
+        text: 'Email credentials saved successfully'
+      });
       resetForm();
       fetchCredentials();
     } catch (error) {
@@ -319,6 +342,12 @@ const EmailIntegration = ({ onImportJobs }) => {
       const statusUpdates = itemsToImport.filter(item => item.type === 'statusUpdate');
       const responses = itemsToImport.filter(item => item.type === 'response');
 
+      // Optimistic UI update - show preview of what will be changed
+      setToastMessage({
+        type: 'info',
+        text: `Importing ${applications.length} new applications, ${statusUpdates.length} status updates, and ${responses.length} responses...`
+      });
+
       // Fix the API endpoint path
       const response = await api.post(`/api/emails/import-all`, {
         applications,
@@ -343,8 +372,16 @@ const EmailIntegration = ({ onImportJobs }) => {
       // Clear selected items after successful import
       setSelectedItems([]);
 
-      // If onImportJobs callback exists (to refresh job list in parent component)
-      if (onImportJobs) {
+      // Show success toast
+      setToastMessage({
+        type: 'success',
+        text: `Successfully imported ${response.data.stats.applications?.added || 0} applications, ${response.data.stats.statusUpdates?.processed || 0} status updates, and ${response.data.stats.responses?.processed || 0} responses!`
+      });
+
+      // Use refreshData function from props if available, otherwise use legacy method
+      if (refreshData) {
+        refreshData();
+      } else if (onImportJobs) {
         onImportJobs();
       }
 
@@ -362,6 +399,12 @@ const EmailIntegration = ({ onImportJobs }) => {
       });
       setProgress(0);
       setProgressMessage('');
+
+      // Show error toast
+      setToastMessage({
+        type: 'danger',
+        text: error.response?.data?.message || 'Error importing items'
+      });
     } finally {
       setImportLoading(false);
     }
@@ -377,6 +420,12 @@ const EmailIntegration = ({ onImportJobs }) => {
 
       // Start progress simulation
       const progressInterval = simulateProgress('sync');
+
+      // Show optimistic UI update
+      setToastMessage({
+        type: 'info',
+        text: 'Sync operation started - searching and importing job data automatically...'
+      });
 
       // Use the emailsAPI with longer timeout for this operation
       const response = await emailsAPI.syncEmails({
@@ -400,8 +449,16 @@ const EmailIntegration = ({ onImportJobs }) => {
         responses: response.data.responses || []
       });
 
-      // If onImportJobs callback exists (to refresh job list in parent component)
-      if (onImportJobs) {
+      // Show success toast
+      setToastMessage({
+        type: 'success',
+        text: response.data.message
+      });
+
+      // Use refreshData function from props if available, otherwise use legacy method
+      if (refreshData) {
+        refreshData();
+      } else if (onImportJobs) {
         onImportJobs();
       }
 
@@ -421,6 +478,12 @@ const EmailIntegration = ({ onImportJobs }) => {
       });
       setProgress(0);
       setProgressMessage('');
+
+      // Show error toast
+      setToastMessage({
+        type: 'danger',
+        text: error.message || 'Error with sync operation'
+      });
     } finally {
       setEmailSearchLoading(false);
     }
@@ -437,9 +500,15 @@ const EmailIntegration = ({ onImportJobs }) => {
 
       if (response.data.folders && response.data.folders.length > 0) {
         setAvailableFolders(response.data.folders);
-        setSuccessMessage('Successfully retrieved email folders');
+        setToastMessage({
+          type: 'success',
+          text: 'Successfully retrieved email folders'
+        });
       } else {
-        setError('No folders found on the email server');
+        setToastMessage({
+          type: 'warning',
+          text: 'No folders found on the email server'
+        });
       }
     } catch (error) {
       console.error('Error fetching email folders:', error);
@@ -525,6 +594,29 @@ const EmailIntegration = ({ onImportJobs }) => {
         <h2>Email Integration</h2>
         <Link to="/" className="btn btn-outline-secondary">Back to Dashboard</Link>
       </div>
+
+      {/* Toast notifications */}
+      {toastMessage && (
+        <div
+          className={`toast show position-fixed top-0 end-0 m-4 bg-${toastMessage.type}`}
+          role="alert"
+          aria-live="assertive"
+          aria-atomic="true"
+          style={{ zIndex: 1050 }}
+        >
+          <div className="toast-header">
+            <strong className="me-auto">Job Tracker</strong>
+            <button
+              type="button"
+              className="btn-close"
+              onClick={() => setToastMessage(null)}
+            ></button>
+          </div>
+          <div className="toast-body text-white">
+            {toastMessage.text}
+          </div>
+        </div>
+      )}
 
       <div className="row">
         <div className="col-md-6">

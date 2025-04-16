@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
 import * as xlsx from 'xlsx';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './App.css';
-import api from './utils/api';
+import api, { setLoadingHandlers } from './utils/api';
+import { LoadingProvider, useLoading } from './contexts/LoadingContext';
+import LoadingIndicator from './components/LoadingIndicator';
 
 // Components
 import Dashboard from './components/Dashboard';
@@ -16,7 +18,43 @@ const DEFAULT_EMPLOYMENT_TYPE = process.env.REACT_APP_DEFAULT_EMPLOYMENT_TYPE ||
 const DEFAULT_WAGE_TYPE = process.env.REACT_APP_DEFAULT_WAGE_TYPE || 'Yearly';
 const DEFAULT_RESPONSE = process.env.REACT_APP_DEFAULT_RESPONSE || 'No Response';
 
+// Main app wrapper to provide loading context
+const AppWithLoadingContext = () => {
+  return (
+    <LoadingProvider>
+      <AppContent />
+    </LoadingProvider>
+  );
+};
+
+// The actual application content
+const AppContent = () => {
+  // Get loading state handlers from context
+  const { setLoading, setLoadingMessage, setLoadingProgress } = useLoading();
+
+  // Connect API loading handlers to loading context
+  useEffect(() => {
+    setLoadingHandlers({
+      setLoading: (isLoading, message = '', progress = 0) => {
+        setLoading(isLoading);
+        setLoadingMessage(message || '');
+        setLoadingProgress(progress);
+      },
+      setLoadingMessage,
+      setLoadingProgress
+    });
+  }, [setLoading, setLoadingMessage, setLoadingProgress]);
+
+  return (
+    <>
+      <AppMain />
+      <LoadingIndicator />
+    </>
+  );
+};
+
 const JobForm = ({ job, onSubmit, isEditing }) => {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     source: '',
     searchType: '',
@@ -97,11 +135,19 @@ const JobForm = ({ job, onSubmit, isEditing }) => {
     setStatusChecks(statusChecks.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     // Add status checks to the form data
     const finalFormData = { ...formData, statusChecks };
-    onSubmit(finalFormData);
+
+    try {
+      await onSubmit(finalFormData);
+      // No longer redirecting with page reload, let the router handle navigation
+      navigate('/');
+    } catch (error) {
+      console.error('Error saving job:', error);
+      // Handle error state if needed
+    }
   };
 
   return (
@@ -703,6 +749,8 @@ const ExcelUpload = ({ onImportJobs }) => {
 };
 
 function EditJobWrapper({ selectedJob, fetchJob, handleUpdateJob }) {
+  const navigate = useNavigate();
+
   useEffect(() => {
     const id = window.location.pathname.split('/').pop();
     if (id) fetchJob(id);
@@ -719,16 +767,20 @@ function EditJobWrapper({ selectedJob, fetchJob, handleUpdateJob }) {
   );
 }
 
-function App() {
+function AppMain() {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedJob, setSelectedJob] = useState(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const { setLoading: setGlobalLoading, setLoadingMessage } = useLoading();
 
-  // Fetch all jobs
+  // Fetch all jobs - improved to work with refresh trigger
   const fetchJobs = async () => {
     try {
       setLoading(true);
+      // Show loading for short operations but with a minimal message
+      setLoadingMessage('Loading job data...');
       const response = await api.get('/api/jobs');
       setJobs(response.data);
       setLoading(false);
@@ -738,73 +790,96 @@ function App() {
     }
   };
 
+  // Refresh function that components can call
+  const refreshData = () => {
+    // Increment refreshTrigger to cause useEffect to run
+    setRefreshTrigger(prev => prev + 1);
+  };
+
   useEffect(() => {
     fetchJobs();
-  }, []);
+  }, [refreshTrigger]); // Now depends on refreshTrigger
 
-  // Add a new job
+  // Add a new job - improved to use refreshData
   const handleAddJob = async (jobData) => {
     try {
+      setLoadingMessage('Saving new job application...');
       await api.post('/api/jobs', jobData);
-      fetchJobs();
-      window.location.href = '/';
+      refreshData(); // Refresh instead of redirecting
+      return true;
     } catch (err) {
       setError('Error adding job: ' + err.message);
+      return false;
     }
   };
 
-  // Update a job
+  // Update a job - improved to use refreshData
   const handleUpdateJob = async (jobData) => {
     try {
+      setLoadingMessage('Updating job application...');
       await api.put(`/api/jobs/${jobData._id}`, jobData);
-      fetchJobs();
-      window.location.href = '/';
+      refreshData(); // Refresh instead of redirecting
+      return true;
     } catch (err) {
       setError('Error updating job: ' + err.message);
+      return false;
     }
   };
 
-  // Delete a job
+  // Delete a job - improved to use refreshData
   const handleDeleteJob = async (jobId) => {
     if (window.confirm('Are you sure you want to delete this job application?')) {
       try {
+        setLoadingMessage('Deleting job application...');
         await api.delete(`/api/jobs/${jobId}`);
-        fetchJobs();
+        refreshData();
+        return true;
       } catch (err) {
         setError('Error deleting job: ' + err.message);
+        return false;
       }
     }
+    return false;
   };
 
-  // Bulk delete jobs
+  // Bulk delete jobs - improved to use refreshData
   const handleBulkDeleteJobs = async (jobIds) => {
     try {
+      setLoadingMessage(`Deleting ${jobIds.length} job applications...`);
       const response = await api.post('/api/jobs/bulk-delete', { ids: jobIds });
-      fetchJobs();
+      refreshData();
       // Show success message
       alert(`Successfully deleted ${response.data.deletedCount} job applications`);
+      return true;
     } catch (err) {
       setError('Error bulk deleting jobs: ' + (err.response?.data?.message || err.message));
+      return false;
     }
   };
 
-  // Update job status
+  // Update job status - improved to use refreshData
   const handleUpdateStatus = async (jobId, newStatus) => {
     try {
+      setLoadingMessage('Updating job status...');
       await api.put(`/api/jobs/${jobId}`, { response: newStatus });
-      fetchJobs();
+      refreshData();
+      return true;
     } catch (err) {
       setError('Error updating status: ' + err.message);
+      return false;
     }
   };
 
   // Fetch a single job for editing
   const fetchJob = async (jobId) => {
     try {
+      setLoadingMessage('Loading job details...');
       const response = await api.get(`/api/jobs/${jobId}`);
       setSelectedJob(response.data);
+      return response.data;
     } catch (err) {
       setError('Error fetching job details: ' + err.message);
+      return null;
     }
   };
 
@@ -851,7 +926,10 @@ function App() {
                   </div>
                 </div>
               ) : (
-                <Dashboard jobs={jobs} />
+                <Dashboard
+                  jobs={jobs}
+                  refreshData={refreshData} // Pass refresh function
+                />
               )
             } />
 
@@ -868,6 +946,7 @@ function App() {
                   onDeleteJob={handleDeleteJob}
                   onUpdateStatus={handleUpdateStatus}
                   onBulkDeleteJobs={handleBulkDeleteJobs}
+                  refreshData={refreshData} // Pass refresh function
                 />
               )
             } />
@@ -885,11 +964,14 @@ function App() {
             } />
 
             <Route path="/upload-excel" element={
-              <ExcelUpload onImportJobs={fetchJobs} />
+              <ExcelUpload onImportJobs={refreshData} /> {/* Use refreshData */}
             } />
 
             <Route path="/email-integration" element={
-              <EmailIntegration onImportJobs={fetchJobs} />
+              <EmailIntegration
+                onImportJobs={refreshData}
+                refreshData={refreshData} // Pass down both for backward compatibility
+              />
             } />
 
             {/* Add a catch-all route for 404 errors */}
@@ -907,4 +989,4 @@ function App() {
   );
 }
 
-export default App;
+export default AppWithLoadingContext;

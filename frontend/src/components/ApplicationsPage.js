@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { jobsAPI } from '../utils/api';
 
-const ApplicationsPage = ({ jobs, onDeleteJob, onUpdateStatus, onBulkDeleteJobs }) => {
+const ApplicationsPage = ({ jobs, onDeleteJob, onUpdateStatus, onBulkDeleteJobs, refreshData }) => {
   const [selectedJobs, setSelectedJobs] = useState({});
   const [selectAll, setSelectAll] = useState(false);
   const [filterStatus, setFilterStatus] = useState('All');
@@ -79,9 +79,14 @@ const ApplicationsPage = ({ jobs, onDeleteJob, onUpdateStatus, onBulkDeleteJobs 
       setSelectAll(false);
 
       // Refresh the jobs list after enrichment
-      setTimeout(() => {
-        window.location.reload();
-      }, 2000);
+      if (refreshData) {
+        refreshData();
+      } else {
+        // Fallback to a page reload if refreshData isn't available
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      }
 
     } catch (error) {
       setEnrichmentMessage({
