@@ -10,20 +10,11 @@
   },
   "routes": [
     { "src": "/static/(.*)", "dest": "/static/$1" },
-    { "src": "/favicon.ico", "dest": "/favicon.ico" },
-    { "src": "/logo192.png", "dest": "/logo192.png" },
-    { "src": "/logo512.png", "dest": "/logo512.png" },
-    { "src": "/manifest.json", "dest": "/manifest.json" },
-    { "src": "/robots.txt", "dest": "/robots.txt" },
+    { "src": "/(favicon.ico|logo192.png|logo512.png|manifest.json|robots.txt)", "dest": "/$1" },
     { "src": "/api/(.*)", "dest": "/api" },
     { "src": "/(.*)", "dest": "/index.html" }
   ],
   "env": {
     "REACT_APP_API_URL": "https://job-tracking-sable.vercel.app"
-  },
-  "build": {
-    "env": {
-      "REACT_APP_API_URL": "https://job-tracking-sable.vercel.app"
-    }
   }
 }

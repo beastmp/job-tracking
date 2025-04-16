@@ -1,27 +1,14 @@
-const express = require('express');
+// Standard server.js entry point for traditional hosting environments
+// This file is used when running the server directly (not in serverless mode)
+
 const mongoose = require('mongoose');
-const cors = require('cors');
 const config = require('./config');
 
-// Create Express app
-const app = express();
+// Import the shared app setup from serverless-adapter
+// This gives us the configured Express app with all routes
+const { app } = require('./serverless-adapter');
 
-// Middleware
-app.use(cors());
-app.use(express.json({ limit: config.server.bodyLimit }));
-app.use(express.urlencoded({ extended: true, limit: config.server.bodyLimit }));
-
-// Import routes
-const jobRoutes = require('./routes/jobs');
-const uploadRoutes = require('./routes/uploads');
-const emailRoutes = require('./routes/emails');
-
-// Use routes
-app.use('/api/jobs', jobRoutes);
-app.use('/api/upload', uploadRoutes);
-app.use('/api/emails', emailRoutes);
-
-// Connect to MongoDB
+// Connect to MongoDB - for traditional server, we connect once at startup
 mongoose.connect(config.database.uri)
   .then(() => {
     console.log('Connected to MongoDB');
@@ -31,7 +18,7 @@ mongoose.connect(config.database.uri)
   });
 
 // Define port
-const PORT = config.server.port;
+const PORT = config.server.port || 5000;
 
 // Start server
 app.listen(PORT, () => {
