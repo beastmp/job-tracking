@@ -4,7 +4,7 @@ const emailController = require('../controllers/emailController');
 const router = express.Router();
 
 // Get all email credentials
-router.get('/credentials', emailController.getAllCredentials);
+router.get('/credentials', emailController.getCredentials);
 
 // Save email credentials
 router.post('/credentials',
@@ -33,7 +33,7 @@ router.post('/sync',
   [
     body('credentialId').notEmpty().withMessage('Credential ID is required'),
   ],
-  emailController.syncEmails
+  emailController.syncEmailItems
 );
 
 // Import items that were previously found during search
@@ -43,7 +43,7 @@ router.post('/import-all',
     body('statusUpdates').optional().isArray(),
     body('responses').optional().isArray(),
   ],
-  emailController.importAll
+  emailController.importAllItems
 );
 
 // Get status of LinkedIn job enrichment processing
