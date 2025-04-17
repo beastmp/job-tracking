@@ -30,6 +30,7 @@ const corsOptions = {
       'https://job-tracking-michael-palmers-projects-7bed5f67.vercel.app',
       'https://job-tracking-git-main-michael-palmers-projects-7bed5f67.vercel.app',
       'https://job-tracking-sable.vercel.app',
+      'http://localhost:3000'
     ];
 
     if (whitelist.indexOf(origin) !== -1) {
