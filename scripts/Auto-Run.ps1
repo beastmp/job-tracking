@@ -547,7 +547,8 @@ MONGODB_DATABASE=job-tracking
 
         if ($LASTEXITCODE -eq 0) {
             Write-Host "✅ MongoDB container started successfully" -ForegroundColor Green
-            $mongodbUri = "mongodb://admin:password@localhost:27017/job-tracking"
+            # Update the connection string to include authSource=admin parameter
+            $mongodbUri = "mongodb://admin:password@localhost:27017/job-tracking?authSource=admin"
 
             # Attempt to test connectivity
             Write-Host "🔄 Testing MongoDB connection..." -ForegroundColor Cyan
@@ -576,6 +577,7 @@ MONGODB_DATABASE=job-tracking
 
             if ($LASTEXITCODE -eq 0) {
                 Write-Host "✅ MongoDB container started with minimal configuration" -ForegroundColor Green
+                # No authentication in minimal config
                 $mongodbUri = "mongodb://localhost:27017/job-tracking"
                 return @{
                     Success = $true
@@ -724,6 +726,18 @@ $nodeEnv = Read-InputWithDefault "Enter the NODE_ENV value" "development"
 
 # Create the backend/.env file
 if ($useLocalMongodb) {
+    # Update MongoDB URI to include authSource=admin for proper authentication
+    if ($mongodbUri -notlike "*authSource=admin*" -and $mongodbUri -like "mongodb://*:*@*") {
+        # Only add authSource if we have authentication in the URI and it's not already there
+        if ($mongodbUri -like "*\?*") {
+            # URL already has parameters, append to them
+            $mongodbUri = "$mongodbUri&authSource=admin"
+        } else {
+            # URL has no parameters yet, add first parameter
+            $mongodbUri = "$mongodbUri?authSource=admin"
+        }
+    }
+
     $backendEnvContent = @"
 PORT=$backendPort
 MONGODB_URI=$mongodbUri
@@ -731,7 +745,7 @@ NODE_ENV=$nodeEnv
 USE_LOCAL_MONGODB=true
 MONGODB_ROOT_USERNAME=admin
 MONGODB_ROOT_PASSWORD=password
-MONGODB_HOST=mongodb
+MONGODB_HOST=localhost
 MONGODB_PORT=27017
 MONGODB_DATABASE=job-tracking
 MONGODB_USERNAME=admin
