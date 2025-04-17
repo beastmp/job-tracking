@@ -3,6 +3,9 @@ import axios from 'axios';
 // Get API URL from environment variable, or use relative path in development
 const API_URL = process.env.REACT_APP_API_URL || '';
 
+// Check if API_URL already contains '/api' path
+const API_PATH = API_URL.endsWith('/api') ? '' : '/api';
+
 // Function to create API with interceptors for loading states
 const createApiInstance = (timeout = 120000) => {
   const instance = axios.create({
@@ -118,31 +121,31 @@ export default api;
 
 // Export specialized API instances for specific domains
 export const jobsAPI = {
-  getJobs: () => api.get('/api/jobs'),
-  getJob: (id) => api.get(`/api/jobs/${id}`),
-  createJob: (jobData) => api.post('/api/jobs', jobData),
-  updateJob: (id, jobData) => api.put(`/api/jobs/${id}`),
-  deleteJob: (id) => api.delete(`/api/jobs/${id}`),
-  bulkDelete: (ids) => api.post('/api/jobs/bulk-delete', { ids }),
-  reEnrichJobs: (ids) => api.post('/api/jobs/re-enrich', { ids })
+  getJobs: () => api.get(`${API_PATH}/jobs`),
+  getJob: (id) => api.get(`${API_PATH}/jobs/${id}`),
+  createJob: (jobData) => api.post(`${API_PATH}/jobs`, jobData),
+  updateJob: (id, jobData) => api.put(`${API_PATH}/jobs/${id}`),
+  deleteJob: (id) => api.delete(`${API_PATH}/jobs/${id}`),
+  bulkDelete: (ids) => api.post(`${API_PATH}/jobs/bulk-delete`, { ids }),
+  reEnrichJobs: (ids) => api.post(`${API_PATH}/jobs/re-enrich`, { ids })
 };
 
 // Email operations API
 export const emailsAPI = {
   // Search emails with option to skip global loading indicator
-  searchEmails: (params) => longRunningApi.post('/api/emails/search-with-saved-credentials', params,
+  searchEmails: (params) => longRunningApi.post(`${API_PATH}/emails/search-with-saved-credentials`, params,
     {
       skipGlobalLoading: true,
       timeout: 300000 // Explicitly set timeout to 5 minutes
     }),
-  getFolders: (credentialId) => api.post('/api/emails/get-folders', { credentialId }),
-  importItems: (data) => api.post('/api/emails/import-all', data),
-  syncEmails: (params) => longRunningApi.post('/api/emails/sync', params,
+  getFolders: (credentialId) => api.post(`${API_PATH}/emails/get-folders`, { credentialId }),
+  importItems: (data) => api.post(`${API_PATH}/emails/import-all`, data),
+  syncEmails: (params) => longRunningApi.post(`${API_PATH}/emails/sync`, params,
     {
       skipGlobalLoading: true,
       timeout: 300000 // Explicitly set timeout to 5 minutes
     }),
-  saveCredentials: (data) => api.post('/api/emails/credentials', data),
-  getCredentials: () => api.get('/api/emails/credentials'),
-  deleteCredentials: (id) => api.delete(`/api/emails/credentials/${id}`)
+  saveCredentials: (data) => api.post(`${API_PATH}/emails/credentials`, data),
+  getCredentials: () => api.get(`${API_PATH}/emails/credentials`),
+  deleteCredentials: (id) => api.delete(`${API_PATH}/emails/credentials/${id}`)
 };
