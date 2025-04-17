@@ -191,18 +191,37 @@ print_success "npm v$NPM_VERSION"
 # Setup environment configuration
 print_step "Setting up environment configuration"
 
-# Get MongoDB URI from user or use Docker
-MONGODB_URI=$(get_mongodb_uri)
+# Get MongoDB URI from user or use Docker - split the result to get both URI and flag
+MONGODB_RESULT=$(get_mongodb_uri)
+# Split the result by colon
+MONGODB_URI=$(echo "$MONGODB_RESULT" | cut -d':' -f1)
+USE_LOCAL_MONGODB=$(echo "$MONGODB_RESULT" | cut -d':' -f2)
 
 # Create backend .env file
 print_step "Creating backend configuration"
 BACKEND_PORT=$(prompt_with_default "Enter the port for the backend server" "5000")
 NODE_ENV=$(prompt_with_default "Enter the NODE_ENV value" "development")
 
-# Create the backend/.env file
-BACKEND_ENV_CONTENT="PORT=$BACKEND_PORT
+# Create the backend/.env file based on MongoDB choice
+if [ "$USE_LOCAL_MONGODB" = "true" ]; then
+    BACKEND_ENV_CONTENT="PORT=$BACKEND_PORT
 MONGODB_URI=$MONGODB_URI
-NODE_ENV=$NODE_ENV"
+NODE_ENV=$NODE_ENV
+USE_LOCAL_MONGODB=true
+MONGODB_ROOT_USERNAME=admin
+MONGODB_ROOT_PASSWORD=password
+MONGODB_HOST=mongodb
+MONGODB_PORT=27017
+MONGODB_DATABASE=job-tracking
+MONGODB_USERNAME=admin
+MONGODB_PASSWORD=password"
+else
+    BACKEND_ENV_CONTENT="PORT=$BACKEND_PORT
+MONGODB_URI=$MONGODB_URI
+NODE_ENV=$NODE_ENV
+USE_LOCAL_MONGODB=false
+MONGODB_ATLAS_URI=$MONGODB_URI"
+fi
 
 create_file_if_not_exists "backend/.env" "$BACKEND_ENV_CONTENT"
 
