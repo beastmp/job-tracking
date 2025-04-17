@@ -531,56 +531,12 @@ MONGODB_DATABASE=job-tracking
             New-Item -ItemType Directory -Path $mongoInitDir -Force | Out-Null
         }
 
-        # Create the initialization script
-        $initScriptPath = Join-Path -Path $mongoInitDir -ChildPath "init-mongo.js"
-        $initScriptContent = @"
-// MongoDB initialization script to properly set up authentication
-db = db.getSiblingDB('admin');
+        # For Hyper-V isolation mode on Windows, we'll use a different approach
+        # Instead of trying to copy files into container, we'll use environment variables for auth
 
-// Check if the user already exists
-var userExists = db.getUser('admin');
-
-// Only create user if it doesn't exist yet
-if (!userExists) {
-    // Create admin user with root role
-    db.createUser({
-        user: 'admin',
-        pwd: 'password',
-        roles: [{ role: 'root', db: 'admin' }]
-    });
-    print('Admin user created successfully');
-}
-
-// Switch to the application database
-db = db.getSiblingDB('job-tracking');
-
-// Create application-specific user if it doesn't already exist
-userExists = db.getUser('admin');
-if (!userExists) {
-    // Create application user with dbOwner role
-    db.createUser({
-        user: 'admin',
-        pwd: 'password',
-        roles: [{ role: 'dbOwner', db: 'job-tracking' }]
-    });
-    print('Application user created successfully');
-}
-
-// Create a test collection to verify permissions
-db.createCollection('test_collection');
-print('Test collection created. Authentication setup complete.');
-"@
-        Set-Content -Path $initScriptPath -Value $initScriptContent -Encoding UTF8
-        Write-Host "✅ Created MongoDB initialization script for authentication" -ForegroundColor Green
-
-        # Convert Windows path to Docker volume format for proper volume mounting
-        $mongoInitDirDockerPath = $mongoInitDir.Replace('\', '/').Replace(':', '')
-        $mongoInitDirDockerPath = "/$mongoInitDirDockerPath"
-
-        # First attempt: Try running MongoDB with authentication directly (without volume mount)
-        Write-Host "🔄 Starting MongoDB container with custom network..." -ForegroundColor Cyan
+        Write-Host "🔄 Starting MongoDB container with authentication..." -ForegroundColor Cyan
         try {
-            # Try running MongoDB with just authentication (no volume mount to avoid path issues)
+            # Start MongoDB with authentication already enabled via environment variables
             if (docker network ls --filter "name=$networkName" --format "{{.Name}}" | Select-String -Pattern $networkName -Quiet) {
                 docker run --name job-tracking-mongodb -d `
                     --network $networkName `
@@ -588,55 +544,32 @@ print('Test collection created. Authentication setup complete.');
                     -e MONGO_INITDB_ROOT_USERNAME=admin `
                     -e MONGO_INITDB_ROOT_PASSWORD=password `
                     -e MONGO_INITDB_DATABASE=job-tracking `
-                    mongo:6
+                    mongo:6 `
+                    --auth
             } else {
                 docker run --name job-tracking-mongodb -d `
                     -p 27017:27017 `
                     -e MONGO_INITDB_ROOT_USERNAME=admin `
                     -e MONGO_INITDB_ROOT_PASSWORD=password `
                     -e MONGO_INITDB_DATABASE=job-tracking `
-                    mongo:6
+                    mongo:6 `
+                    --auth
             }
 
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "✅ MongoDB container started successfully" -ForegroundColor Green
+                Write-Host "✅ MongoDB container started with authentication enabled" -ForegroundColor Green
 
-                # Container was started, but we still need to create the MongoDB user
-                # Let the container initialize first
-                Write-Host "🔄 Waiting for MongoDB to initialize..." -ForegroundColor Cyan
-                Start-Sleep -Seconds 5
-
-                # Copy the initialization script into the container
-                Write-Host "🔄 Applying authentication configuration..." -ForegroundColor Cyan
-                docker cp $initScriptPath job-tracking-mongodb:/tmp/init-mongo.js
-
-                # Execute the script inside the container
-                if ($LASTEXITCODE -eq 0) {
-                    docker exec job-tracking-mongodb mongosh --file /tmp/init-mongo.js
-                    if ($LASTEXITCODE -eq 0) {
-                        Write-Host "✅ MongoDB authentication configured successfully" -ForegroundColor Green
-                    } else {
-                        Write-Host "⚠️ MongoDB script execution failed, but container is running" -ForegroundColor Yellow
-                    }
-                } else {
-                    Write-Host "⚠️ Could not copy script to container, but MongoDB is running" -ForegroundColor Yellow
-                }
-
+                # When using --auth flag with MONGO_INITDB_ROOT_USERNAME and MONGO_INITDB_ROOT_PASSWORD,
+                # MongoDB automatically sets up the admin user with the root role
                 # Update the connection string to include authSource=admin parameter
                 $mongodbUri = "mongodb://admin:password@localhost:27017/job-tracking?authSource=admin"
 
-                # Attempt to test connectivity
-                Write-Host "🔄 Testing MongoDB connection..." -ForegroundColor Cyan
-                try {
-                    docker exec job-tracking-mongodb mongosh "mongodb://admin:password@localhost:27017/job-tracking?authSource=admin" --quiet --eval "db.runCommand({ping:1})" | Out-Null
-                    if ($LASTEXITCODE -eq 0) {
-                        Write-Host "✅ MongoDB connection successful" -ForegroundColor Green
-                    } else {
-                        Write-Host "⚠️ MongoDB connection test failed, but container is running" -ForegroundColor Yellow
-                    }
-                } catch {
-                    Write-Host "⚠️ Could not test MongoDB connection, but container appears to be running" -ForegroundColor Yellow
-                }
+                # Wait a moment for MongoDB to initialize
+                Write-Host "🔄 Waiting for MongoDB to initialize..." -ForegroundColor Cyan
+                Start-Sleep -Seconds 5
+
+                # Attempt to test connectivity - we won't try to use docker exec since it may not work with Hyper-V isolation
+                Write-Host "✅ MongoDB connection URI configured: $($mongodbUri.Replace('password', '*****'))" -ForegroundColor Green
 
                 return @{
                     Success = $true
@@ -656,7 +589,7 @@ print('Test collection created. Authentication setup complete.');
         docker run --name job-tracking-mongodb -d mongo:6
 
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ MongoDB container started with minimal configuration" -ForegroundColor Green
+            Write-Host "✅ MongoDB container started with minimal configuration (no authentication)" -ForegroundColor Green
             # No authentication in minimal config
             $mongodbUri = "mongodb://localhost:27017/job-tracking"
             return @{
