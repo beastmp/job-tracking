@@ -5,6 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const config = require('./config');
+const { connectToDatabase } = require('./utils/dbConnection');
 const jobRoutes = require('./routes/jobs');
 const uploadRoutes = require('./routes/uploads');
 const emailRoutes = require('./routes/emails');
@@ -76,43 +77,13 @@ app.use('/api/jobs', jobRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/emails', emailRoutes);
 
-// Optimize MongoDB connection for serverless
-// Store connection in global variable to reuse across function invocations
-let dbConnection = null;
-const connectToDatabase = async () => {
-  // If we already have a connection, use it
-  if (dbConnection && mongoose.connection.readyState === 1) {
-    return dbConnection;
-  }
-
-  // Configure connection options for better performance in serverless
-  const options = {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-    bufferCommands: false, // Disable mongoose buffering
-    serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
-    maxPoolSize: 10, // Keep up to 10 connections open
-    socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
-  };
-
-  try {
-    // Create new connection
-    dbConnection = await mongoose.connect(config.database.uri, options);
-    console.log('Connected to MongoDB');
-    return dbConnection;
-  } catch (err) {
-    console.error('MongoDB connection error:', err);
-    throw err;
-  }
-};
-
 // Generic serverless handler
 const serverlessHandler = async (req, res) => {
   // Add timestamp for performance tracking
   const startTime = Date.now();
 
   try {
-    // Connect to database (will reuse connection if it exists)
+    // Connect to database using our connection manager (will reuse connection if it exists)
     await connectToDatabase();
 
     // Log performance data
@@ -127,6 +98,9 @@ const serverlessHandler = async (req, res) => {
   } finally {
     // Log overall function execution time
     console.log(`Total function execution time: ${Date.now() - startTime}ms`);
+
+    // Note: we don't close the connection here as it's reused between serverless invocations
+    // The cloud provider will handle connection cleanup when the instance is recycled
   }
 };
 

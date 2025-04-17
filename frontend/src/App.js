@@ -750,20 +750,34 @@ const ExcelUpload = ({ onImportJobs }) => {
 };
 
 function EditJobWrapper({ selectedJob, fetchJob, handleUpdateJob }) {
-  // Remove unused navigate variable
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const id = window.location.pathname.split('/').pop();
-    if (id) fetchJob(id);
+    const loadJob = async () => {
+      try {
+        const id = window.location.pathname.split('/').pop();
+        if (id) {
+          await fetchJob(id);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadJob();
   }, [fetchJob]);
 
-  return selectedJob ? (
-    <JobForm job={selectedJob} onSubmit={handleUpdateJob} isEditing={true} />
-  ) : (
+  return isLoading ? (
     <div className="text-center mt-5">
       <div className="spinner-border" role="status">
         <span className="visually-hidden">Loading...</span>
       </div>
+    </div>
+  ) : selectedJob ? (
+    <JobForm job={selectedJob} onSubmit={handleUpdateJob} isEditing={true} />
+  ) : (
+    <div className="alert alert-danger">
+      Failed to load job details. Please try again.
     </div>
   );
 }
