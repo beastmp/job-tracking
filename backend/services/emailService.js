@@ -524,38 +524,6 @@ exports.searchEmailsForJobs = async (imapConfig, options) => {
                         responses.push(response);
                       }
                     }
-                    // // 4. General interview or positive response emails
-                    // else if (subject.match(/interview|next steps|meet with|call with|moving forward/i) ||
-                    //          (textContent.match(/interview|next steps|would like to meet|schedule a call|pleased to inform/i) ||
-                    //           htmlContent.match(/interview|next steps|would like to meet|schedule a call|pleased to inform/i))) {
-                    //   const response = await parseGenericResponseEmail(email, 'Interview');
-                    //   if (response) {
-                    //     responses.push(response);
-                    //   }
-                    // }
-                    // // 5. Catchall for any other job-related emails with keywords
-                    // else if ((subject.match(/job|position|career|role|opening|application|applicant|candidacy/i) ||
-                    //          fromAddress.match(/careers|talent|recruiting|hr|hire|greenhouse|lever|jobs|employment|recruitment/i)) &&
-                    //          !applications.some(app => app.emailId === email.messageId) &&
-                    //          !responses.some(resp => resp.emailId === email.messageId) &&
-                    //          !statusUpdates.some(stat => stat.emailId === email.messageId)) {
-                    //   // Try to determine if this is an application email
-                    //   if (textContent.match(/thank you for (your )?appl(y|ication|ying)|received your application|application (has been )?received|review your application/i) ||
-                    //       htmlContent.match(/thank you for (your )?appl(y|ication|ying)|received your application|application (has been )?received|review your application/i)) {
-                    //     const jobData = await parseGenericApplicationEmail(email);
-                    //     if (jobData) {
-                    //       applications.push(jobData);
-                    //     }
-                    //   }
-                    //   // Or perhaps a response/update email
-                    //   else if (textContent.match(/status|update|decision|regarding your application/i) ||
-                    //            htmlContent.match(/status|update|decision|regarding your application/i)) {
-                    //     const response = await parseGenericResponseEmail(email);
-                    //     if (response) {
-                    //       responses.push(response);
-                    //     }
-                    //   }
-                    // }
                   } catch (error) {
                     console.error('Error processing email:', error);
                   }
@@ -728,7 +696,7 @@ async function searchEmailsInBatches(imapConfig, options, batchSize = 25, proces
                 } else {
                   try {
                     // Use the same email processing logic as before
-                    processEmail(email, applications, statusUpdates, responses);
+                    await processEmail(email, applications, statusUpdates, responses);
                   } catch (error) {
                     console.error('Error processing email:', error);
                   }
@@ -811,7 +779,7 @@ async function searchEmailsInBatches(imapConfig, options, batchSize = 25, proces
  * @param {Array} statusUpdates - Array to collect status update data
  * @param {Array} responses - Array to collect response data
  */
-function processEmail(email, applications, statusUpdates, responses) {
+async function processEmail(email, applications, statusUpdates, responses) {
   // Get email metadata
   const subject = email.subject || '';
   const fromAddress = email.from ? email.from.text || '' : '';
@@ -823,7 +791,7 @@ function processEmail(email, applications, statusUpdates, responses) {
       fromAddress.includes('@linkedin.com')) {
     // LinkedIn job application confirmation
     if (subject.includes('application was sent')) {
-      const jobData = parseLinkedInJobApplication(email);
+      const jobData = await parseLinkedInJobApplication(email);
       if (jobData) {
         applications.push(jobData);
       }
@@ -833,7 +801,7 @@ function processEmail(email, applications, statusUpdates, responses) {
             subject.includes('is in review') ||
             subject.includes('is being considered') ||
             subject.includes('application status')) {
-      const statusUpdate = parseLinkedInStatusEmail(email);
+      const statusUpdate = await parseLinkedInStatusEmail(email);
       if (statusUpdate) {
         statusUpdates.push(statusUpdate);
       }
@@ -847,7 +815,7 @@ function processEmail(email, applications, statusUpdates, responses) {
             subject.includes('Your update from') ||
             subject.includes('response to your application') ||
             subject.includes('Response to your application')) {
-      const response = parseLinkedInResponseEmail(email);
+      const response = await parseLinkedInResponseEmail(email);
       if (response) {
         responses.push(response);
       }
@@ -855,7 +823,7 @@ function processEmail(email, applications, statusUpdates, responses) {
   }
   // 2. General application confirmation emails (non-LinkedIn)
   else if (subject.match(/application received|application (is )?complete|received your application|thank you for (your )?appl(y|ication|ying)|we have received your application|we received your application/i)) {
-    const jobData = parseGenericApplicationEmail(email);
+    const jobData = await parseGenericApplicationEmail(email);
     if (jobData) {
       applications.push(jobData);
     }
@@ -864,7 +832,7 @@ function processEmail(email, applications, statusUpdates, responses) {
   else if (subject.match(/update|status|thank you for your interest|unfortunately|not moving forward|decision/i) &&
            (textContent.match(/unfortunately|not (a )?match|not moving forward|other candidates|regret to inform|thank you for your interest/i) ||
             htmlContent.match(/unfortunately|not (a )?match|not moving forward|other candidates|regret to inform|thank you for your interest/i))) {
-    const response = parseGenericResponseEmail(email, 'Rejected');
+    const response = await parseGenericResponseEmail(email, 'Rejected');
     if (response) {
       responses.push(response);
     }
@@ -1573,7 +1541,6 @@ async function parseLinkedInResponseEmail(email) {
     // Check for offer keywords
     else if (textContent.includes('offer') ||
              textContent.includes('congratulations') ||
-             textContent.includes('pleased to') ||
              textContent.includes('welcome to the team')) {
 
       response = 'Offer';
