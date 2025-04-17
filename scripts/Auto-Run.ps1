@@ -649,11 +649,68 @@ Write-StepHeader "Setting up environment configuration"
 
 # Get script directory and root directory
 $scriptDir = $PSScriptRoot
-$rootDir = Split-Path -Parent (Split-Path -Parent $scriptDir)
+$rootDir = Split-Path -Parent $scriptDir
 
-# Set locations relative to the root directory
+# Set locations relative to the root directory directly (fix for path issues)
 $backendDir = Join-Path -Path $rootDir -ChildPath "backend"
 $frontendDir = Join-Path -Path $rootDir -ChildPath "frontend"
+
+# Ensure directories exist or create them
+if (-not (Test-Path -Path $backendDir)) {
+    Write-Host "⚠️ Backend directory not found at: $backendDir" -ForegroundColor Yellow
+    Write-Host "🔄 Attempting to locate backend directory..." -ForegroundColor Cyan
+
+    # Try to find the backend directory
+    $possibleBackendDir = Join-Path -Path $rootDir -ChildPath "..\backend"
+    if (Test-Path -Path $possibleBackendDir) {
+        $backendDir = (Get-Item $possibleBackendDir).FullName
+        Write-Host "✅ Found backend directory at: $backendDir" -ForegroundColor Green
+    } else {
+        # Try one more location
+        $possibleBackendDir = Join-Path -Path (Split-Path -Parent $rootDir) -ChildPath "backend"
+        if (Test-Path -Path $possibleBackendDir) {
+            $backendDir = (Get-Item $possibleBackendDir).FullName
+            Write-Host "✅ Found backend directory at: $backendDir" -ForegroundColor Green
+        } else {
+            # Create the directory if it doesn't exist
+            try {
+                New-Item -ItemType Directory -Path $backendDir -Force | Out-Null
+                Write-Host "✅ Created backend directory at: $backendDir" -ForegroundColor Green
+            } catch {
+                Write-Host "❌ Could not create backend directory. Using current path as fallback." -ForegroundColor Red
+                $backendDir = $rootDir
+            }
+        }
+    }
+}
+
+if (-not (Test-Path -Path $frontendDir)) {
+    Write-Host "⚠️ Frontend directory not found at: $frontendDir" -ForegroundColor Yellow
+    Write-Host "🔄 Attempting to locate frontend directory..." -ForegroundColor Cyan
+
+    # Try to find the frontend directory
+    $possibleFrontendDir = Join-Path -Path $rootDir -ChildPath "..\frontend"
+    if (Test-Path -Path $possibleFrontendDir) {
+        $frontendDir = (Get-Item $possibleFrontendDir).FullName
+        Write-Host "✅ Found frontend directory at: $frontendDir" -ForegroundColor Green
+    } else {
+        # Try one more location
+        $possibleFrontendDir = Join-Path -Path (Split-Path -Parent $rootDir) -ChildPath "frontend"
+        if (Test-Path -Path $possibleFrontendDir) {
+            $frontendDir = (Get-Item $possibleFrontendDir).FullName
+            Write-Host "✅ Found frontend directory at: $frontendDir" -ForegroundColor Green
+        } else {
+            # Create the directory if it doesn't exist
+            try {
+                New-Item -ItemType Directory -Path $frontendDir -Force | Out-Null
+                Write-Host "✅ Created frontend directory at: $frontendDir" -ForegroundColor Green
+            } catch {
+                Write-Host "❌ Could not create frontend directory. Using current path as fallback." -ForegroundColor Red
+                $frontendDir = $rootDir
+            }
+        }
+    }
+}
 
 # Get MongoDB URI from user or use Docker
 $mongodbInfo = Get-MongoDbUri
