@@ -182,40 +182,18 @@ function Get-MongoDbUri {
             $scriptDir = $PSScriptRoot
             $rootDir = Split-Path -Parent $scriptDir
 
-            Push-Location -Path $rootDir
-            if (-not (Test-Path -Path "docker-compose.yml")) {
-                Write-Host "❌ docker-compose.yml not found in project root directory." -ForegroundColor Red
-                Write-Host "⚠️ Cannot start MongoDB with Docker. Using default connection string." -ForegroundColor Yellow
+            $dockerResult = Setup-MongoDbDocker -rootDir $rootDir
+            if (-not $dockerResult.Success) {
+                Write-Host "❌ Failed to start MongoDB container" -ForegroundColor Red
+                Write-Host "⚠️ Falling back to MongoDB Atlas. Enter your connection details:" -ForegroundColor Yellow
+                $mongodbUri = Read-InputWithDefault "Enter your MongoDB Atlas connection URI" $defaultAtlasUri
                 $useDocker = $false
                 $useLocalMongodb = $false
             } else {
-                # Create .env file with necessary MongoDB configurations
-                $envContent = @"
-USE_LOCAL_MONGODB=true
-MONGODB_ROOT_USERNAME=admin
-MONGODB_ROOT_PASSWORD=password
-MONGODB_DATABASE=job-tracking
-"@
-                Set-Content -Path ".env" -Value $envContent -Encoding UTF8
-                Write-Host "✅ Created .env file with USE_LOCAL_MONGODB=true" -ForegroundColor Green
-
-                # Start only the MongoDB container with the local-mongodb profile
-                docker-compose --profile local-mongodb up -d mongodb
-                if ($LASTEXITCODE -ne 0) {
-                    Write-Host "❌ Failed to start MongoDB container" -ForegroundColor Red
-                    Write-Host "⚠️ Falling back to MongoDB Atlas. Enter your connection details:" -ForegroundColor Yellow
-                    $mongodbUri = Read-InputWithDefault "Enter your MongoDB Atlas connection URI" $defaultAtlasUri
-                    $useDocker = $false
-                    $useLocalMongodb = $false
-                } else {
-                    Write-Host "✅ MongoDB Docker container is running" -ForegroundColor Green
-                    # Use the default MongoDB URI for Docker
-                    $mongodbUri = "mongodb://admin:password@localhost:27017/job-tracking"
-                }
+                Write-Host "✅ MongoDB Docker container is running" -ForegroundColor Green
+                $mongodbUri = $dockerResult.Uri
             }
 
-            # Go back to original directory
-            Pop-Location
         } else {
             # Try to install MongoDB automatically
             Write-Host "🔄 No local MongoDB or Docker found. Attempting to install MongoDB automatically..." -ForegroundColor Cyan
@@ -377,40 +355,18 @@ MONGODB_DATABASE=job-tracking
                     $scriptDir = $PSScriptRoot
                     $rootDir = Split-Path -Parent $scriptDir
 
-                    Push-Location -Path $rootDir
-                    if (-not (Test-Path -Path "docker-compose.yml")) {
-                        Write-Host "❌ docker-compose.yml not found in project root directory." -ForegroundColor Red
-                        Write-Host "⚠️ Cannot start MongoDB with Docker. Using default connection string." -ForegroundColor Yellow
+                    $dockerResult = Setup-MongoDbDocker -rootDir $rootDir
+                    if (-not $dockerResult.Success) {
+                        Write-Host "❌ Failed to start MongoDB container" -ForegroundColor Red
+                        Write-Host "⚠️ Falling back to MongoDB Atlas. Enter your connection details:" -ForegroundColor Yellow
+                        $mongodbUri = Read-InputWithDefault "Enter your MongoDB Atlas connection URI" $defaultAtlasUri
                         $useDocker = $false
                         $useLocalMongodb = $false
                     } else {
-                        # Create .env file with necessary MongoDB configurations
-                        $envContent = @"
-USE_LOCAL_MONGODB=true
-MONGODB_ROOT_USERNAME=admin
-MONGODB_ROOT_PASSWORD=password
-MONGODB_DATABASE=job-tracking
-"@
-                        Set-Content -Path ".env" -Value $envContent -Encoding UTF8
-                        Write-Host "✅ Created .env file with USE_LOCAL_MONGODB=true" -ForegroundColor Green
-
-                        # Start only the MongoDB container with the local-mongodb profile
-                        docker-compose --profile local-mongodb up -d mongodb
-                        if ($LASTEXITCODE -ne 0) {
-                            Write-Host "❌ Failed to start MongoDB container" -ForegroundColor Red
-                            Write-Host "⚠️ Falling back to MongoDB Atlas. Enter your connection details:" -ForegroundColor Yellow
-                            $mongodbUri = Read-InputWithDefault "Enter your MongoDB Atlas connection URI" $defaultAtlasUri
-                            $useDocker = $false
-                            $useLocalMongodb = $false
-                        } else {
-                            Write-Host "✅ MongoDB Docker container is running" -ForegroundColor Green
-                            # Use the default MongoDB URI for Docker
-                            $mongodbUri = "mongodb://admin:password@localhost:27017/job-tracking"
-                        }
+                        Write-Host "✅ MongoDB Docker container is running" -ForegroundColor Green
+                        $mongodbUri = $dockerResult.Uri
                     }
 
-                    # Go back to original directory
-                    Pop-Location
                 } catch {
                     Write-Host "❌ Docker or docker-compose not found. Cannot start MongoDB container." -ForegroundColor Red
                     Write-Host "⚠️ Falling back to MongoDB Atlas. Enter your connection details:" -ForegroundColor Yellow
@@ -522,6 +478,127 @@ function Test-CommandExists {
         return $false
     }
     return $false
+}
+
+# Function to setup MongoDB using Docker with Windows network handling
+function Setup-MongoDbDocker {
+    param (
+        [string]$rootDir
+    )
+
+    Push-Location -Path $rootDir
+
+    try {
+        # Create .env file with necessary MongoDB configurations
+        $envContent = @"
+USE_LOCAL_MONGODB=true
+MONGODB_ROOT_USERNAME=admin
+MONGODB_ROOT_PASSWORD=password
+MONGODB_DATABASE=job-tracking
+"@
+        Set-Content -Path ".env" -Value $envContent -Encoding UTF8
+        Write-Host "✅ Created .env file with USE_LOCAL_MONGODB=true" -ForegroundColor Green
+
+        # Create a properly configured network for Windows using nat driver
+        Write-Host "🔄 Setting up Docker network for MongoDB..." -ForegroundColor Cyan
+
+        # Check if the job-tracking network exists
+        $networkName = "job-tracking-network"
+        $networkExists = docker network ls --filter "name=$networkName" --format "{{.Name}}" | Out-String
+
+        # If network doesn't exist, create it with the nat driver on Windows
+        if (-not $networkExists.Contains($networkName)) {
+            Write-Host "🔄 Creating '$networkName' network with nat driver (Windows-compatible)..." -ForegroundColor Cyan
+            docker network create --driver nat $networkName
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "⚠️ Could not create network with nat driver, falling back to direct container..." -ForegroundColor Yellow
+            } else {
+                Write-Host "✅ Created network '$networkName' successfully" -ForegroundColor Green
+            }
+        }
+
+        # Check if container already exists and remove if it does
+        $containerExists = docker ps -a --format "{{.Names}}" | Select-String -Pattern "job-tracking-mongodb" -Quiet
+        if ($containerExists) {
+            Write-Host "🔄 Stopping and removing existing MongoDB container..." -ForegroundColor Yellow
+            docker stop job-tracking-mongodb | Out-Null
+            docker rm job-tracking-mongodb | Out-Null
+        }
+
+        # Run MongoDB with the network if it was created successfully, otherwise run standalone
+        if (docker network ls --filter "name=$networkName" --format "{{.Name}}" | Select-String -Pattern $networkName -Quiet) {
+            Write-Host "🔄 Starting MongoDB container with custom network..." -ForegroundColor Cyan
+            docker run --name job-tracking-mongodb -d `
+                --network $networkName `
+                -p 27017:27017 `
+                -e MONGO_INITDB_ROOT_USERNAME=admin `
+                -e MONGO_INITDB_ROOT_PASSWORD=password `
+                -e MONGO_INITDB_DATABASE=job-tracking `
+                mongo:6
+        } else {
+            Write-Host "🔄 Starting MongoDB container without custom network..." -ForegroundColor Cyan
+            docker run --name job-tracking-mongodb -d `
+                -p 27017:27017 `
+                -e MONGO_INITDB_ROOT_USERNAME=admin `
+                -e MONGO_INITDB_ROOT_PASSWORD=password `
+                -e MONGO_INITDB_DATABASE=job-tracking `
+                mongo:6
+        }
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "✅ MongoDB container started successfully" -ForegroundColor Green
+            $mongodbUri = "mongodb://admin:password@localhost:27017/job-tracking"
+
+            # Attempt to test connectivity
+            Write-Host "🔄 Testing MongoDB connection..." -ForegroundColor Cyan
+            Start-Sleep -Seconds 3 # Give MongoDB a few seconds to initialize
+
+            try {
+                # Simple connection test using Docker exec
+                docker exec job-tracking-mongodb mongosh --quiet --eval "db.runCommand({ping:1})" | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "✅ MongoDB connection successful" -ForegroundColor Green
+                } else {
+                    Write-Host "⚠️ MongoDB container is running but connection test failed - it may need more time to initialize" -ForegroundColor Yellow
+                }
+            } catch {
+                Write-Host "⚠️ Could not test MongoDB connection, but container appears to be running" -ForegroundColor Yellow
+            }
+
+            return @{
+                Success = $true
+                Uri = $mongodbUri
+            }
+        } else {
+            # Try simple run as a last resort
+            Write-Host "⚠️ Failed to start MongoDB container. Trying minimal configuration as last resort..." -ForegroundColor Yellow
+            docker run --name job-tracking-mongodb -d mongo:6
+
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "✅ MongoDB container started with minimal configuration" -ForegroundColor Green
+                $mongodbUri = "mongodb://localhost:27017/job-tracking"
+                return @{
+                    Success = $true
+                    Uri = $mongodbUri
+                }
+            } else {
+                Write-Host "❌ All attempts to start MongoDB container failed" -ForegroundColor Red
+                return @{
+                    Success = $false
+                    Uri = ""
+                }
+            }
+        }
+    } catch {
+        Write-Host "❌ Error starting MongoDB container: $_" -ForegroundColor Red
+        return @{
+            Success = $false
+            Uri = ""
+        }
+    } finally {
+        # Go back to original directory
+        Pop-Location
+    }
 }
 
 # Display header
