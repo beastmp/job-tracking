@@ -1,6 +1,37 @@
 const dotenv = require('dotenv');
 dotenv.config();
 
+// Helper function to determine the MongoDB connection string
+const getDatabaseUri = () => {
+  // Check if MongoDB Atlas URI is provided
+  if (process.env.MONGODB_ATLAS_URI) {
+    return process.env.MONGODB_ATLAS_URI;
+  }
+
+  // Check if local MongoDB URI is provided
+  if (process.env.MONGODB_LOCAL_URI) {
+    return process.env.MONGODB_LOCAL_URI;
+  }
+
+  // Fall back to the generic MONGODB_URI if provided
+  if (process.env.MONGODB_URI) {
+    return process.env.MONGODB_URI;
+  }
+
+  // Construct a default local MongoDB URI if needed
+  const host = process.env.MONGODB_HOST || 'localhost';
+  const port = process.env.MONGODB_PORT || '27017';
+  const database = process.env.MONGODB_DATABASE || 'job-tracking';
+  const username = process.env.MONGODB_USERNAME;
+  const password = process.env.MONGODB_PASSWORD;
+
+  if (username && password) {
+    return `mongodb://${username}:${password}@${host}:${port}/${database}`;
+  }
+
+  return `mongodb://${host}:${port}/${database}`;
+};
+
 module.exports = {
   server: {
     port: process.env.PORT || 5000,
@@ -8,7 +39,9 @@ module.exports = {
     apiTimeout: parseInt(process.env.API_TIMEOUT || '30000', 10)
   },
   database: {
-    uri: process.env.MONGODB_URI
+    uri: getDatabaseUri(),
+    isAtlas: Boolean(process.env.MONGODB_ATLAS_URI),
+    isLocal: Boolean(process.env.MONGODB_LOCAL_URI) || (!process.env.MONGODB_ATLAS_URI && !process.env.MONGODB_URI)
   },
   linkedin: {
     rateLimit: {
