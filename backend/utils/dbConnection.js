@@ -1,6 +1,6 @@
 // Create a MongoDB connection manager for consistent connection handling
 const mongoose = require('mongoose');
-const config = require('./config');
+const config = require('../config');
 
 // Default MongoDB connection options optimized for performance and reliability
 const defaultMongoOptions = {
