@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Include MongoDB service that can be enabled/disabled with a condition
   mongodb:

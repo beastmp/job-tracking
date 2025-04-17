@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Include MongoDB service that can be enabled/disabled with a condition
   mongodb:
@@ -33,12 +31,23 @@ services:
       - MONGODB_DATABASE=${MONGODB_DATABASE:-job-tracking}
       - MONGODB_USERNAME=${MONGODB_USERNAME:-admin}
       - MONGODB_PASSWORD=${MONGODB_PASSWORD:-password}
+      - USE_LOCAL_MONGODB=${USE_LOCAL_MONGODB:-false}
+    # When USE_LOCAL_MONGODB is true, we'll have a dependency on mongodb
     depends_on:
-      # Only depend on MongoDB if using local deployment
       - ${USE_LOCAL_MONGODB:-false}_mongodb
     restart: unless-stopped
     networks:
       - app-network
+
+  # Service alias for conditional dependency
+  true_mongodb:
+    image: tianon/true
+    depends_on:
+      - mongodb
+
+  # Empty service for conditional dependency
+  false_mongodb:
+    image: tianon/true
 
   frontend:
     build: ./frontend
