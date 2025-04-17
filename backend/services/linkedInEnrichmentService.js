@@ -38,30 +38,60 @@ exports.queueJobForEnrichment = (url, jobData) => {
       jobData: jobData
     });
     processedJobs[jobData.externalJobId] = true;
+
+    // Automatically start background processing whenever a new job is added
+    startBackgroundProcessing();
   }
 };
 
+// Track if background processing is already running
+let isProcessingInBackground = false;
+
 /**
- * Process the enrichment queue with proper rate limiting and batching
- * @returns {Promise<Object[]>} Array of processed job data with enrichments
+ * Start background processing of the enrichment queue
+ * @returns {void}
  */
-exports.processEnrichmentQueue = async () => {
-  if (enrichmentQueue.length === 0) return [];
+function startBackgroundProcessing() {
+  // If already processing, don't start another process
+  if (isProcessingInBackground) return;
+
+  isProcessingInBackground = true;
+  console.log(`Starting background enrichment processing for ${enrichmentQueue.length} jobs`);
+
+  // Use setImmediate to move processing to the background
+  setImmediate(async () => {
+    try {
+      await processEnrichmentQueueInBackground();
+    } catch (error) {
+      console.error('Background enrichment processing error:', error);
+    } finally {
+      isProcessingInBackground = false;
+
+      // If there are still jobs in the queue, schedule another processing round
+      if (enrichmentQueue.length > 0) {
+        setTimeout(startBackgroundProcessing, 1000);
+      }
+    }
+  });
+}
+
+/**
+ * Process the enrichment queue in the background
+ * @returns {Promise<void>}
+ */
+async function processEnrichmentQueueInBackground() {
+  if (enrichmentQueue.length === 0) return;
 
   const queueSize = enrichmentQueue.length;
-  console.log(`Processing LinkedIn enrichment queue (batch of max ${ENRICHMENT_BATCH_SIZE} from ${queueSize} total jobs)...`);
+  console.log(`Background process: Processing LinkedIn enrichment queue (batch of max ${ENRICHMENT_BATCH_SIZE} from ${queueSize} total jobs)...`);
 
-  const enrichedJobs = [];
   let consecutiveFailures = 0;
+  const Job = require('../models/Job');
 
-  // Only process a limited batch of jobs to avoid timeouts
-  const batchSize = Math.min(ENRICHMENT_BATCH_SIZE, enrichmentQueue.length);
-  const currentBatch = enrichmentQueue.splice(0, batchSize);
-
-  // Process the current batch with improved rate limiting
-  for (const item of currentBatch) {
-    let retryCurrentItem = false;
-    let enrichedData = null;
+  // Process jobs until we hit rate limits or the queue is empty
+  while (enrichmentQueue.length > 0 && consecutiveFailures < RATE_LIMIT.maxConsecutiveFailures) {
+    // Take one job from the queue
+    const item = enrichmentQueue.shift();
 
     try {
       const jobId = linkedInUtils.extractJobIdFromUrl(item.url);
@@ -78,17 +108,17 @@ exports.processEnrichmentQueue = async () => {
       }
 
       console.log(`Fetching data for job ID: ${jobId} (URL: ${item.url})`);
-      enrichedData = await enrichJobDataFromLinkedIn(item.url);
+      const enrichedData = await enrichJobDataFromLinkedIn(item.url);
 
       if (enrichedData) {
         // Success! Reset consecutive failures
         consecutiveFailures = 0;
 
-        // Save enriched job for return
-        enrichedJobs.push({
-          externalJobId: item.jobData.externalJobId,
-          enrichedData
-        });
+        // If we have a MongoDB job ID, update the job directly in the database
+        if (item.jobData._id) {
+          await updateJobWithEnrichment(item.jobData._id, enrichedData);
+          console.log(`Updated job ${item.jobData._id} with enriched data directly in database`);
+        }
       }
     } catch (error) {
       console.error(`Error during enrichment for job ${item.jobData.externalJobId}:`, error.message);
@@ -115,12 +145,97 @@ exports.processEnrichmentQueue = async () => {
     }
   }
 
-  console.log(`Batch processing complete. ${enrichmentQueue.length} jobs remaining in queue for future processing.`);
+  console.log(`Background enrichment batch complete. ${enrichmentQueue.length} jobs remaining in queue for future processing.`);
+}
 
-  // Note: we're not clearing the entire queue anymore, only removing processed items
-  // The remaining items will be processed on subsequent requests
+/**
+ * Update a job directly in the database with enriched data
+ * @param {string} jobId MongoDB job ID
+ * @param {Object} enrichedData Enriched data from LinkedIn
+ * @returns {Promise<void>}
+ */
+async function updateJobWithEnrichment(jobId, enrichedData) {
+  try {
+    // Find the job in the database
+    const Job = require('../models/Job');
+    const job = await Job.findById(jobId);
 
-  return enrichedJobs;
+    if (!job) {
+      console.log(`Job ${jobId} not found in database`);
+      return;
+    }
+
+    // Update job with enriched data
+    if (enrichedData.description) {
+      job.description = enrichedData.description;
+    }
+
+    if (enrichedData.employmentType) {
+      job.employmentType = enrichedData.employmentType;
+    }
+
+    // Update salary information
+    if (enrichedData.salary) {
+      const salaryInfo = linkedInUtils.parseSalaryString(enrichedData.salary);
+
+      if (salaryInfo) {
+        job.wagesMin = salaryInfo.min;
+        job.wagesMax = salaryInfo.max;
+        job.wageType = salaryInfo.type;
+      }
+    }
+
+    // Add or update recruiter information
+    if (enrichedData.recruiterName) {
+      const recruiterNote = `\nRecruiter: ${enrichedData.recruiterName}`;
+      const noteAddition = recruiterNote + (enrichedData.recruiterRole ? `, ${enrichedData.recruiterRole}` : '');
+
+      // Check if notes already contain recruiter info
+      if (job.notes && job.notes.includes('Recruiter:')) {
+        // Don't duplicate recruiter info
+        if (!job.notes.includes(enrichedData.recruiterName)) {
+          job.notes += noteAddition;
+        }
+      } else {
+        // Add recruiter info to existing notes
+        job.notes = (job.notes || '') + noteAddition;
+      }
+    }
+
+    // Add a note about enrichment if not already present
+    if (!job.notes || !job.notes.includes('Enriched with LinkedIn data')) {
+      job.notes = (job.notes || '') + '\nEnriched with LinkedIn data';
+    }
+
+    // Save the updated job
+    await job.save();
+
+  } catch (error) {
+    console.error(`Error updating job ${jobId} with enriched data:`, error.message);
+  }
+}
+
+/**
+ * Process the enrichment queue - this is the original function which now returns immediately
+ * @returns {Promise<Object[]>} Always returns an empty array since processing happens in background
+ */
+exports.processEnrichmentQueue = async () => {
+  // Start background processing if not already running
+  startBackgroundProcessing();
+
+  // Return immediately - enrichment happens in the background
+  return [];
+};
+
+/**
+ * Get status of background enrichment processing
+ * @returns {Object} Status information
+ */
+exports.getEnrichmentStatus = () => {
+  return {
+    isProcessing: isProcessingInBackground,
+    queueSize: enrichmentQueue.length
+  };
 };
 
 // Use the parseSalaryString function from utilities

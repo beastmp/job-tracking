@@ -132,20 +132,16 @@ export const jobsAPI = {
 
 // Email operations API
 export const emailsAPI = {
-  // Search emails with option to skip global loading indicator
-  searchEmails: (params) => longRunningApi.post(`${API_PATH}/emails/search-with-saved-credentials`, params,
+  // Sync emails with option to skip global loading indicator
+  syncEmails: (params) => longRunningApi.post(`${API_PATH}/emails/sync`, params,
     {
       skipGlobalLoading: true,
       timeout: 300000 // Explicitly set timeout to 5 minutes
     }),
   getFolders: (credentialId) => api.post(`${API_PATH}/emails/get-folders`, { credentialId }),
   importItems: (data) => api.post(`${API_PATH}/emails/import-all`, data),
-  syncEmails: (params) => longRunningApi.post(`${API_PATH}/emails/sync`, params,
-    {
-      skipGlobalLoading: true,
-      timeout: 300000 // Explicitly set timeout to 5 minutes
-    }),
   saveCredentials: (data) => api.post(`${API_PATH}/emails/credentials`, data),
   getCredentials: () => api.get(`${API_PATH}/emails/credentials`),
-  deleteCredentials: (id) => api.delete(`${API_PATH}/emails/credentials/${id}`)
+  deleteCredentials: (id) => api.delete(`${API_PATH}/emails/credentials/${id}`),
+  getEnrichmentStatus: () => api.get(`${API_PATH}/emails/enrichment-status`)
 };

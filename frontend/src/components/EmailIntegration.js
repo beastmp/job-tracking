@@ -54,6 +54,9 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
   // Feedback toast for user actions
   const [toastMessage, setToastMessage] = useState(null);
 
+  // Add this state at the top of the component with the other states
+  const [enrichmentStatus, setEnrichmentStatus] = useState({ isProcessing: false, queueSize: 0 });
+
   useEffect(() => {
     fetchCredentials();
   }, []);
@@ -68,6 +71,21 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
       return () => clearTimeout(timer);
     }
   }, [toastMessage]);
+
+  // Add this effect to periodically check the enrichment status
+  useEffect(() => {
+    // Get enrichment status once on component mount
+    fetchEnrichmentStatus();
+
+    // Set up interval to periodically check status if there are active processes
+    const interval = setInterval(() => {
+      if (enrichmentStatus.isProcessing || enrichmentStatus.queueSize > 0) {
+        fetchEnrichmentStatus();
+      }
+    }, 10000); // Check every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [enrichmentStatus.isProcessing, enrichmentStatus.queueSize]);
 
   // Fetch stored email credentials
   const fetchCredentials = async () => {
@@ -224,163 +242,6 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
         setProgress(progress);
       }
     }, 800);
-  };
-
-  // Search emails for job applications and status updates
-  const searchEmails = async (credentialId) => {
-    try {
-      setEmailSearchLoading(true);
-      setEmailResults(null);
-      setItemsToProcess([]);
-      setProgress(5);
-      setProgressMessage('Connecting to email server...');
-      setError(''); // Clear any previous errors
-
-      // Reset processing details
-      setProcessingDetails({
-        emailsTotal: 0,
-        emailsProcessed: 0,
-        foldersTotal: 0,
-        foldersProcessed: 0,
-        enrichmentTotal: 0,
-        enrichmentProcessed: 0
-      });
-
-      const credential = credentials.find(cred => cred._id === credentialId);
-
-      if (!credential) {
-        setError('Invalid credential selected');
-        setProgress(0);
-        setProgressMessage('');
-        return;
-      }
-
-      // Show toast message to indicate a long-running operation
-      setToastMessage({
-        type: 'info',
-        text: 'Starting email search - this may take several minutes for large mailboxes'
-      });
-
-      // Initialize progress display
-      setProgressMessage('Starting email search...');
-      setProcessingDetails(prev => ({
-        ...prev,
-        foldersTotal: credential.searchFolders.length,
-        foldersProcessed: 0
-      }));
-
-      // Start progress simulation for better UX
-      const progressInterval = simulateProgress('search');
-
-      try {
-        // Use the emailsAPI with longer timeout for this operation
-        const response = await emailsAPI.searchEmails({
-          credentialId,
-          searchTimeframeDays: credential.searchTimeframeDays,
-          searchFolders: credential.searchFolders,
-          ignorePreviousImport // Pass the force option to ignore last import time
-        });
-
-        // Clear the interval once we have a response
-        clearInterval(progressInterval);
-
-        // Show completion
-        setProgress(100);
-        setProgressMessage('Search complete!');
-
-        setEmailResults(response.data);
-
-        // If we have processing stats, update them
-        if (response.data.processingStats) {
-          setProcessingDetails(response.data.processingStats);
-        }
-
-        // Combine all items (applications, status updates, responses) into a single array
-        const allItems = [
-          ...(response.data.applications || []).map(item => ({ ...item, type: 'application' })),
-          ...(response.data.statusUpdates || []).map(item => ({ ...item, type: 'statusUpdate' })),
-          ...(response.data.responses || []).map(item => ({ ...item, type: 'response' }))
-        ];
-
-        // Show enrichment status if we have pending enrichments
-        if (response.data.pendingEnrichments > 0) {
-          setProgressMessage(`Initial processing complete! ${response.data.pendingEnrichments} jobs will be enriched in the background.`);
-        }
-
-        if (allItems.length > 0) {
-          setItemsToProcess(allItems);
-          // Initially select all non-existing items
-          setSelectedItems(allItems.filter(item => !item.exists).map(item => item.id || item._id));
-        }
-
-        // Reset progress after a moment
-        setTimeout(() => {
-          setProgress(0);
-          setProgressMessage('');
-        }, 2000);
-      } catch (error) {
-        // Clear the interval if there's an error
-        clearInterval(progressInterval);
-
-        console.error('Error searching emails:', error);
-
-        // Set a more informative error message
-        if (error.code === 'ECONNABORTED') {
-          // Handle timeout error with specific guidance
-          setEmailResults({
-            success: false,
-            message: 'The search operation timed out. This happens because our server has a 30-second time limit for processing. Please try one of these solutions:',
-            applications: [],
-            statusUpdates: [],
-            responses: []
-          });
-
-          // Show timeout specific guidance with actionable steps
-          setToastMessage({
-            type: 'warning',
-            text: 'Search timed out. Try searching fewer folders or a shorter time period'
-          });
-
-          // Add specific recommendations to the error state
-          setError(`
-            To avoid timeouts:
-            1. Reduce the search timeframe (try 30 days instead of ${credential.searchTimeframeDays})
-            2. Search one folder at a time instead of ${credential.searchFolders.length} folders
-            3. Use the "Sync" button instead, which processes emails in the background
-          `);
-        } else {
-          setEmailResults({
-            success: false,
-            message: error.message || 'Error searching emails',
-            applications: [],
-            statusUpdates: [],
-            responses: []
-          });
-
-          // Show error toast
-          setToastMessage({
-            type: 'danger',
-            text: 'Email search failed: ' + (error.message || 'Unknown error')
-          });
-        }
-
-        setProgress(0);
-        setProgressMessage('');
-      }
-    } catch (error) {
-      console.error('Error in searchEmails outer try block:', error);
-      setEmailResults({
-        success: false,
-        message: error.message || 'Error searching emails: An unexpected error occurred.',
-        applications: [],
-        statusUpdates: [],
-        responses: []
-      });
-      setProgress(0);
-      setProgressMessage('');
-    } finally {
-      setEmailSearchLoading(false);
-    }
   };
 
   // Import selected items
@@ -649,6 +510,18 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
       );
     }
     return <span className="badge bg-secondary">Unknown</span>;
+  };
+
+  // Add this function to fetch the enrichment status
+  const fetchEnrichmentStatus = async () => {
+    try {
+      const response = await emailsAPI.getEnrichmentStatus();
+      if (response.data.success) {
+        setEnrichmentStatus(response.data.status);
+      }
+    } catch (error) {
+      console.error("Error fetching enrichment status:", error);
+    }
   };
 
   return (
@@ -976,19 +849,11 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
                           </button>
 
                           <button
-                            className="btn btn-sm btn-outline-success"
-                            onClick={() => searchEmails(credential._id)}
-                            disabled={emailSearchLoading}
-                          >
-                            Search
-                          </button>
-
-                          <button
-                            className="btn btn-sm btn-outline-info"
+                            className="btn btn-sm btn-success"
                             onClick={() => runSync(credential._id)}
                             disabled={emailSearchLoading}
                           >
-                            Sync
+                            Sync & Import
                           </button>
 
                           <div className="form-check form-check-inline align-self-center ms-2">
@@ -1000,7 +865,7 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
                               onChange={(e) => setIgnorePreviousImport(e.target.checked)}
                             />
                             <label className="form-check-label" htmlFor="ignorePreviousImport">
-                              Force Full Search
+                              Force Full Sync
                             </label>
                           </div>
                         </div>
@@ -1070,6 +935,45 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* LinkedIn Enrichment Status Card */}
+          {(enrichmentStatus.isProcessing || enrichmentStatus.queueSize > 0) && (
+            <div className="card mb-4">
+              <div className="card-header bg-info text-white">
+                <h5 className="mb-0">
+                  <i className="bi bi-linkedin me-2"></i>
+                  LinkedIn Data Enrichment
+                </h5>
+              </div>
+              <div className="card-body">
+                <div className="d-flex justify-content-between mb-2">
+                  <span>Status:</span>
+                  <strong>{enrichmentStatus.isProcessing ? 'Active' : 'Queued'}</strong>
+                </div>
+                <div className="d-flex justify-content-between mb-3">
+                  <span>Jobs in Queue:</span>
+                  <strong>{enrichmentStatus.queueSize}</strong>
+                </div>
+
+                {enrichmentStatus.queueSize > 0 && (
+                  <div className="progress">
+                    <div
+                      className="progress-bar progress-bar-striped progress-bar-animated bg-info"
+                      role="progressbar"
+                      style={{ width: `${Math.min(100, (100 * (1 - enrichmentStatus.queueSize / (enrichmentStatus.queueSize + 1))))}%` }}
+                      aria-valuenow={enrichmentStatus.queueSize}
+                      aria-valuemin="0"
+                    />
+                  </div>
+                )}
+
+                <div className="mt-3 small">
+                  <i className="bi bi-info-circle me-1"></i>
+                  Job data is being enriched with details from LinkedIn in the background. This process happens automatically to respect LinkedIn's rate limits.
+                </div>
               </div>
             </div>
           )}

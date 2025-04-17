@@ -152,6 +152,31 @@ exports.deleteCredentials = async (req, res) => {
   }
 };
 
+// Add this new function to get the enrichment status
+/**
+ * Get status of LinkedIn job enrichment processing
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+exports.getEnrichmentStatus = async (req, res) => {
+  try {
+    const linkedInEnrichmentService = require('../services/linkedInEnrichmentService');
+    const status = linkedInEnrichmentService.getEnrichmentStatus();
+
+    return res.status(200).json({
+      success: true,
+      status
+    });
+  } catch (error) {
+    console.error('Error getting enrichment status:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to get enrichment status'
+    });
+  }
+};
+
 // Reusable error handler for API responses
 function handleApiError(error, res, defaultMessage) {
   console.error(`${defaultMessage}:`, error);
