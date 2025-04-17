@@ -21,12 +21,11 @@ exports.reEnrichJobs = async (req, res) => {
 
     const result = await jobService.reEnrichJobs(ids);
     res.status(200).json({
-      message: `Successfully enriched ${result.enrichedCount} jobs`,
-      enrichedCount: result.enrichedCount,
-      enrichedJobs: result.enrichedJobs
+      message: result.message || `Successfully queued ${result.queuedCount} jobs for LinkedIn enrichment`,
+      queuedCount: result.queuedCount
     });
   } catch (error) {
-    res.status(500).json({ message: 'Error enriching job data', error: error.message });
+    res.status(500).json({ message: 'Error queuing jobs for enrichment', error: error.message });
   }
 };
 

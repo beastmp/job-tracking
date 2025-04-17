@@ -63,7 +63,7 @@ const ApplicationsPage = ({ jobs, onDeleteJob, onUpdateStatus, onBulkDeleteJobs,
       setEnrichingJobs(true);
       setEnrichmentMessage({
         type: 'info',
-        text: `Re-enriching ${selectedCount} selected job listings from LinkedIn...`
+        text: `Queuing ${selectedCount} selected job listings for LinkedIn enrichment...`
       });
 
       const jobIdsToEnrich = Object.keys(selectedJobs).filter(id => selectedJobs[id]);
@@ -71,27 +71,35 @@ const ApplicationsPage = ({ jobs, onDeleteJob, onUpdateStatus, onBulkDeleteJobs,
 
       setEnrichmentMessage({
         type: 'success',
-        text: `Successfully enriched ${response.data.enrichedCount} job listings with data from LinkedIn.`
+        text: response.data.message || `Successfully queued ${response.data.queuedCount} job listings for LinkedIn enrichment. The process will run in the background and may take several minutes to complete.`
       });
 
       // Clear selection after successful operation
       setSelectedJobs({});
       setSelectAll(false);
 
-      // Refresh the jobs list after enrichment
-      if (refreshData) {
-        refreshData();
-      } else {
-        // Fallback to a page reload if refreshData isn't available
-        setTimeout(() => {
-          window.location.reload();
-        }, 2000);
-      }
+      // Set a timer to refresh the data after a delay
+      setTimeout(() => {
+        if (refreshData) {
+          refreshData();
+        }
+      }, 10000); // Wait 10 seconds before first refresh
+
+      // Set up an interval to refresh periodically until user interaction
+      const refreshInterval = setInterval(() => {
+        if (refreshData) {
+          refreshData();
+        }
+      }, 30000); // Refresh every 30 seconds
+
+      // Clear the interval after 5 minutes or if user interacts with the page
+      setTimeout(() => clearInterval(refreshInterval), 300000);
+      document.addEventListener('click', () => clearInterval(refreshInterval), { once: true });
 
     } catch (error) {
       setEnrichmentMessage({
         type: 'danger',
-        text: `Error enriching job data: ${error.response?.data?.message || error.message}`
+        text: `Error queuing job data for enrichment: ${error.response?.data?.message || error.message}`
       });
     } finally {
       setEnrichingJobs(false);

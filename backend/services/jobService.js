@@ -60,7 +60,7 @@ exports.bulkDeleteJobs = async (ids) => {
 /**
  * Re-enrich job data from LinkedIn
  * @param {Array} ids - List of job IDs to re-enrich
- * @returns {Promise<Object>} Result with enriched job count and data
+ * @returns {Promise<Object>} Result with queued job count
  */
 exports.reEnrichJobs = async (ids) => {
   const linkedInService = require('./linkedInEnrichmentService');
@@ -69,7 +69,7 @@ exports.reEnrichJobs = async (ids) => {
   const jobs = await Job.find({ _id: { $in: ids } });
 
   if (!jobs || jobs.length === 0) {
-    return { enrichedCount: 0, enrichedJobs: [] };
+    return { queuedCount: 0, enrichedCount: 0, enrichedJobs: [] };
   }
 
   // Filter jobs that have LinkedIn URLs
@@ -79,96 +79,24 @@ exports.reEnrichJobs = async (ids) => {
   );
 
   if (jobsWithLinkedIn.length === 0) {
-    return { enrichedCount: 0, enrichedJobs: [] };
+    return { queuedCount: 0, enrichedCount: 0, enrichedJobs: [] };
   }
 
   // Queue each job for enrichment
   jobsWithLinkedIn.forEach(job => {
     linkedInService.queueJobForEnrichment(job.website, {
-      externalJobId: job.externalJobId || linkedInService.extractJobIdFromUrl(job.website)
+      externalJobId: job.externalJobId || linkedInService.extractJobIdFromUrl(job.website),
+      jobId: job._id // Store the MongoDB ID to identify the job later
     });
   });
 
-  // Process the enrichment queue
-  const enrichedResults = await linkedInService.processEnrichmentQueue();
-
-  // Update jobs with enriched data
-  const updatedJobs = [];
-
-  for (const enrichedResult of enrichedResults) {
-    const matchingJobs = jobsWithLinkedIn.filter(job =>
-      job.externalJobId === enrichedResult.externalJobId ||
-      (job.website && linkedInService.extractJobIdFromUrl(job.website) === enrichedResult.externalJobId)
-    );
-
-    for (const job of matchingJobs) {
-      try {
-        // Apply enriched data to job
-        const updatedJobData = linkedInService.applyEnrichmentToJob(job, enrichedResult.enrichedData);
-
-        // Create a clean update object with only the fields we want to update
-        const updateFields = {};
-
-        // Only include fields that have changed in the update
-        if (enrichedResult.enrichedData.description) {
-          updateFields.description = updatedJobData.description;
-        }
-
-        if (enrichedResult.enrichedData.employmentType) {
-          updateFields.employmentType = updatedJobData.employmentType;
-        }
-
-        if (enrichedResult.enrichedData.salary) {
-          const salaryInfo = linkedInService.parseSalaryString(enrichedResult.enrichedData.salary);
-          if (salaryInfo) {
-            updateFields.wagesMin = salaryInfo.min;
-            updateFields.wagesMax = salaryInfo.max;
-            updateFields.wageType = salaryInfo.type;
-            console.log(`Setting salary in database: Min=${salaryInfo.min}, Max=${salaryInfo.max}, Type=${salaryInfo.type}`);
-          }
-        }
-
-        if (enrichedResult.enrichedData.recruiterName) {
-          // Handle notes update separately to avoid overwriting
-          const recruiterNote = `\nRecruiter: ${enrichedResult.enrichedData.recruiterName}`;
-          const noteAddition = recruiterNote + (enrichedResult.enrichedData.recruiterRole ? `, ${enrichedResult.enrichedData.recruiterRole}` : '');
-
-          if (job.notes && job.notes.includes('Recruiter:')) {
-            if (!job.notes.includes(enrichedResult.enrichedData.recruiterName)) {
-              updateFields.notes = job.notes + noteAddition;
-            }
-          } else {
-            updateFields.notes = (job.notes || '') + noteAddition;
-          }
-        }
-
-        // Only perform update if we have fields to update
-        if (Object.keys(updateFields).length > 0) {
-          console.log(`Updating job ${job._id} with fields:`, updateFields);
-
-          // Save changes to database using explicit field updates
-          const dbUpdatedJob = await Job.findByIdAndUpdate(
-            job._id,
-            { $set: updateFields },
-            { new: true, runValidators: true }
-          );
-
-          console.log(`Database update result:`, dbUpdatedJob ? 'Success' : 'Failed');
-
-          // Add to updated jobs list if successful
-          if (dbUpdatedJob) {
-            updatedJobs.push(dbUpdatedJob);
-          }
-        }
-      } catch (error) {
-        console.error(`Error updating job ${job._id}:`, error.message);
-      }
-    }
-  }
+  // Start the enrichment process - this will happen asynchronously in the background
+  // We don't wait for it to complete here
+  linkedInService.processEnrichmentQueue();
 
   return {
-    enrichedCount: updatedJobs.length,
-    enrichedJobs: updatedJobs
+    queuedCount: jobsWithLinkedIn.length,
+    message: `Queued ${jobsWithLinkedIn.length} jobs for LinkedIn enrichment. This process will run in the background.`
   };
 };
 
