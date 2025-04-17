@@ -88,11 +88,13 @@ create_file_if_not_exists() {
 get_mongodb_uri() {
   local default_uri="mongodb://localhost:27017/job-tracking"
   local use_docker=false
+  local use_local_mongodb=false
   local mongodb_uri="$default_uri"
 
   if command_exists docker && command_exists docker-compose; then
     if prompt_yes_no "Would you like to use Docker for MongoDB?" "Y"; then
       use_docker=true
+      use_local_mongodb=true
       # Start MongoDB container
       print_step "Starting MongoDB with Docker"
 
@@ -103,7 +105,7 @@ get_mongodb_uri() {
       if [ ! -f "docker-compose.yml" ]; then
         print_warning "docker-compose.yml not found in backend directory. Creating one..."
         cat > docker-compose.yml << EOL
-version: '3'
+version: '3.8'
 services:
   mongodb:
     image: mongo:6
@@ -113,6 +115,8 @@ services:
     volumes:
       - mongodb_data:/data/db
     restart: unless-stopped
+    profiles:
+      - local-mongodb
 
 volumes:
   mongodb_data:
@@ -120,8 +124,17 @@ EOL
         print_success "Created docker-compose.yml file"
       fi
 
-      # Start MongoDB container in detached mode
-      docker-compose up -d mongodb
+      # Create .env file with USE_LOCAL_MONGODB=true
+      cat > .env << EOL
+USE_LOCAL_MONGODB=true
+MONGODB_ROOT_USERNAME=admin
+MONGODB_ROOT_PASSWORD=password
+MONGODB_DATABASE=job-tracking
+EOL
+      print_success "Created .env file with USE_LOCAL_MONGODB=true"
+
+      # Start MongoDB container in detached mode with local-mongodb profile
+      docker-compose --profile local-mongodb up -d mongodb
 
       # Go back to original directory
       cd ..
@@ -131,13 +144,16 @@ EOL
       # User doesn't want to use Docker
       print_warning "Not using Docker for MongoDB"
       mongodb_uri=$(prompt_with_default "Enter your MongoDB connection URI" "$default_uri")
+      use_local_mongodb=false
     fi
   else
     print_warning "Docker or docker-compose not found. Cannot start MongoDB container."
     mongodb_uri=$(prompt_with_default "Enter your MongoDB connection URI" "$default_uri")
+    use_local_mongodb=false
   fi
 
-  echo "$mongodb_uri"
+  # Return both URI and whether using local MongoDB as an array
+  echo "$mongodb_uri:$use_local_mongodb"
 }
 
 # Check prerequisite tools and versions

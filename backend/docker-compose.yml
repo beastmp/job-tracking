@@ -34,6 +34,7 @@ services:
       - MONGODB_DATABASE=${MONGODB_DATABASE:-job-tracking}
       - MONGODB_USERNAME=${MONGODB_USERNAME:-admin}
       - MONGODB_PASSWORD=${MONGODB_PASSWORD:-password}
+      - USE_LOCAL_MONGODB=${USE_LOCAL_MONGODB:-false}
     depends_on:
       # Only depend on MongoDB if using local deployment
       - ${USE_LOCAL_MONGODB:-false}_mongodb

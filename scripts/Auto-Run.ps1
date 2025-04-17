@@ -69,6 +69,7 @@ function Get-MongoDbUri {
     $defaultUri = "mongodb://localhost:27017/job-tracking"
     $useDocker = $false
     $mongodbUri = $defaultUri
+    $useLocalMongodb = $false
 
     try {
         docker --version | Out-Null
@@ -76,15 +77,20 @@ function Get-MongoDbUri {
 
         if (Read-YesNo "Would you like to use Docker for MongoDB?" "Y") {
             $useDocker = $true
+            $useLocalMongodb = $true
             # Start MongoDB container
             Write-StepHeader "Starting MongoDB with Docker"
 
             # Navigate to backend directory which should contain docker-compose.yml
-            Push-Location -Path "../../backend"
+            $scriptDir = $PSScriptRoot
+            $rootDir = Split-Path -Parent (Split-Path -Parent $scriptDir)
+            $backendDir = Join-Path -Path $rootDir -ChildPath "backend"
+
+            Push-Location -Path $backendDir
             if (-not (Test-Path -Path "docker-compose.yml")) {
                 Write-Host "⚠️ docker-compose.yml not found in backend directory. Creating one..." -ForegroundColor Yellow
                 @"
-version: '3'
+version: '3.8'
 services:
   mongodb:
     image: mongo:6
@@ -94,6 +100,8 @@ services:
     volumes:
       - mongodb_data:/data/db
     restart: unless-stopped
+    profiles:
+      - local-mongodb
 
 volumes:
   mongodb_data:
@@ -101,8 +109,18 @@ volumes:
                 Write-Host "✅ Created docker-compose.yml file" -ForegroundColor Green
             }
 
-            # Start MongoDB container in detached mode
-            docker-compose up -d mongodb
+            # Create .env file with USE_LOCAL_MONGODB=true
+            $envContent = @"
+USE_LOCAL_MONGODB=true
+MONGODB_ROOT_USERNAME=admin
+MONGODB_ROOT_PASSWORD=password
+MONGODB_DATABASE=job-tracking
+"@
+            Set-Content -Path ".env" -Value $envContent -Encoding UTF8
+            Write-Host "✅ Created .env file with USE_LOCAL_MONGODB=true" -ForegroundColor Green
+
+            # Start MongoDB container in detached mode with local-mongodb profile
+            docker-compose --profile local-mongodb up -d mongodb
 
             # Go back to original directory
             Pop-Location
@@ -112,13 +130,18 @@ volumes:
             # User doesn't want to use Docker
             Write-Host "⚠️ Not using Docker for MongoDB" -ForegroundColor Yellow
             $mongodbUri = Read-InputWithDefault "Enter your MongoDB connection URI" $defaultUri
+            $useLocalMongodb = $false
         }
     } catch {
         Write-Host "⚠️ Docker or docker-compose not found. Cannot start MongoDB container." -ForegroundColor Yellow
         $mongodbUri = Read-InputWithDefault "Enter your MongoDB connection URI" $defaultUri
+        $useLocalMongodb = $false
     }
 
-    return $mongodbUri
+    return @{
+        Uri = $mongodbUri
+        UseLocalMongodb = $useLocalMongodb
+    }
 }
 
 # Function to check if command exists (simplified version for PowerShell)
@@ -189,7 +212,9 @@ $backendDir = Join-Path -Path $rootDir -ChildPath "backend"
 $frontendDir = Join-Path -Path $rootDir -ChildPath "frontend"
 
 # Get MongoDB URI from user or use Docker
-$mongodbUri = Get-MongoDbUri
+$mongodbInfo = Get-MongoDbUri
+$mongodbUri = $mongodbInfo.Uri
+$useLocalMongodb = $mongodbInfo.UseLocalMongodb
 
 # Create backend .env file
 Write-StepHeader "Creating backend configuration"
@@ -197,11 +222,29 @@ $backendPort = Read-InputWithDefault "Enter the port for the backend server" "50
 $nodeEnv = Read-InputWithDefault "Enter the NODE_ENV value" "development"
 
 # Create the backend/.env file
-$backendEnvContent = @"
+if ($useLocalMongodb) {
+    $backendEnvContent = @"
 PORT=$backendPort
 MONGODB_URI=$mongodbUri
 NODE_ENV=$nodeEnv
+USE_LOCAL_MONGODB=true
+MONGODB_ROOT_USERNAME=admin
+MONGODB_ROOT_PASSWORD=password
+MONGODB_HOST=mongodb
+MONGODB_PORT=27017
+MONGODB_DATABASE=job-tracking
+MONGODB_USERNAME=admin
+MONGODB_PASSWORD=password
 "@
+} else {
+    $backendEnvContent = @"
+PORT=$backendPort
+MONGODB_URI=$mongodbUri
+NODE_ENV=$nodeEnv
+USE_LOCAL_MONGODB=false
+MONGODB_ATLAS_URI=$mongodbUri
+"@
+}
 
 $backendEnvPath = Join-Path -Path $backendDir -ChildPath ".env"
 New-FileIfNotExists -FilePath $backendEnvPath -Content $backendEnvContent
