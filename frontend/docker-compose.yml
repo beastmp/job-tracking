@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  frontend-job-tracking:
+    build: .
+    ports:
+      - "8001:80"  # Using different ports for each app
+    restart: unless-stopped
+    environment:
+      - REACT_APP_API_URL=http://${BACKEND_VM_IP}:5001/api  # Point to backend VM
+    networks:
+      - frontend-network
+
+  # You can add more frontend services here
+  # frontend-app2:
+  #   build: ./app2
+  #   ports:
+  #     - "8002:80"
+  #   restart: unless-stopped
+  #   environment:
+  #     - REACT_APP_API_URL=http://${BACKEND_VM_IP}:5002/api
+  #   networks:
+  #     - frontend-network
+
+  # Add nginx as a reverse proxy to route traffic
+  nginx-proxy:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../nginx/conf.d:/etc/nginx/conf.d
+      - ../nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - frontend-job-tracking
+      # - frontend-app2
+    restart: unless-stopped
+    networks:
+      - frontend-network
+
+networks:
+  frontend-network:
+    driver: bridge

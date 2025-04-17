@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # Include MongoDB service that can be enabled/disabled with a condition
+  mongodb:
+    image: mongo:6
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGODB_ROOT_USERNAME:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_ROOT_PASSWORD:-password}
+      - MONGO_INITDB_DATABASE=job-tracking
+    restart: unless-stopped
+    networks:
+      - backend-network
+    # This service will only start if USE_LOCAL_MONGODB=true
+    profiles:
+      - local-mongodb
+
+  backend-job-tracking:
+    build: .
+    ports:
+      - "5001:5000"  # Using different ports for each app
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - CORS_ORIGIN=http://${FRONTEND_VM_IP}:80  # Allow frontend VM
+      # Support for both MongoDB Atlas and local MongoDB
+      - MONGODB_ATLAS_URI=${MONGODB_ATLAS_URI_JOB_TRACKING:-}
+      - MONGODB_HOST=${MONGODB_HOST:-mongodb}
+      - MONGODB_PORT=${MONGODB_PORT:-27017}
+      - MONGODB_DATABASE=${MONGODB_DATABASE:-job-tracking}
+      - MONGODB_USERNAME=${MONGODB_USERNAME:-admin}
+      - MONGODB_PASSWORD=${MONGODB_PASSWORD:-password}
+    depends_on:
+      # Only depend on MongoDB if using local deployment
+      - ${USE_LOCAL_MONGODB:-false}_mongodb
+    restart: unless-stopped
+    networks:
+      - backend-network
+
+  # You can add more backend services here
+  # backend-app2:
+  #   build: ./app2
+  #   ports:
+  #     - "5002:5000"
+  #   environment:
+  #     - NODE_ENV=production
+  #     - PORT=5000
+  #     - MONGODB_ATLAS_URI=${MONGODB_ATLAS_URI_APP2}
+  #     - CORS_ORIGIN=http://${FRONTEND_VM_IP}:80
+  #   restart: unless-stopped
+  #   networks:
+  #     - backend-network
+
+networks:
+  backend-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+    driver: local
