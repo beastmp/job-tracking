@@ -84,76 +84,458 @@ create_file_if_not_exists() {
   fi
 }
 
-# Function to get MongoDB URI from user or use default
+# Function to check if Docker is running
+is_docker_running() {
+  if command_exists docker; then
+    if docker info >/dev/null 2>&1; then
+      return 0
+    else
+      return 1
+    fi
+  else
+    return 1
+  fi
+}
+
+# Function to start Docker
+start_docker() {
+  if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    print_warning "Attempting to start Docker service..."
+    sudo systemctl start docker
+    sleep 5
+    if is_docker_running; then
+      print_success "Docker service started"
+      return 0
+    else
+      print_error "Failed to start Docker service"
+      return 1
+    fi
+  elif [[ "$OSTYPE" == "darwin"* ]]; then
+    print_warning "Attempting to start Docker Desktop..."
+    open -a Docker
+    echo "Waiting for Docker to start (this may take a minute)..."
+    for i in {1..12}; do
+      sleep 5
+      if is_docker_running; then
+        print_success "Docker started successfully"
+        return 0
+      fi
+      echo "⏳ Still waiting for Docker to start..."
+    done
+    print_error "Docker failed to start in the expected time"
+    return 1
+  else
+    print_error "Cannot automatically start Docker on this OS"
+    return 1
+  fi
+}
+
+# Function to check if MongoDB is installed and running
+check_mongodb_local() {
+  # Check if MongoDB is installed
+  if command_exists mongod; then
+    print_success "MongoDB is installed locally"
+
+    # Check if MongoDB service is running
+    if pgrep -x "mongod" >/dev/null; then
+      print_success "MongoDB service is running"
+      return 0
+    else
+      print_warning "MongoDB is installed but not running"
+      return 1
+    fi
+  else
+    return 2
+  fi
+}
+
+# Function to attempt to start MongoDB
+start_mongodb_local() {
+  if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    print_warning "Attempting to start MongoDB service..."
+    sudo systemctl start mongod 2>/dev/null || sudo service mongod start 2>/dev/null
+    sleep 3
+    if pgrep -x "mongod" >/dev/null; then
+      print_success "MongoDB service started"
+      return 0
+    else
+      print_error "Failed to start MongoDB service"
+      return 1
+    fi
+  elif [[ "$OSTYPE" == "darwin"* ]]; then
+    print_warning "Attempting to start MongoDB service..."
+    brew services start mongodb-community 2>/dev/null
+    sleep 3
+    if pgrep -x "mongod" >/dev/null; then
+      print_success "MongoDB service started"
+      return 0
+    else
+      print_error "Failed to start MongoDB service"
+      return 1
+    fi
+  else
+    print_error "Cannot automatically start MongoDB on this OS"
+    return 1
+  fi
+}
+
+# Function to install MongoDB
+install_mongodb() {
+  print_step "Installing MongoDB locally"
+
+  if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    # Ubuntu/Debian based
+    if command_exists apt-get; then
+      print_warning "Installing MongoDB using apt..."
+      # Import MongoDB public GPG key
+      wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | sudo apt-key add -
+      # Create list file for MongoDB
+      echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+      # Update package database
+      sudo apt-get update
+      # Install MongoDB
+      sudo apt-get install -y mongodb-org
+      # Start MongoDB
+      sudo systemctl start mongod
+      # Enable MongoDB to start on boot
+      sudo systemctl enable mongod
+
+      if pgrep -x "mongod" >/dev/null; then
+        print_success "MongoDB installed and started"
+        return 0
+      else
+        print_error "MongoDB installed but failed to start"
+        return 1
+      fi
+    # Red Hat/Fedora based
+    elif command_exists dnf; then
+      print_warning "Installing MongoDB using dnf..."
+      # Create repo file
+      echo "[mongodb-org-6.0]
+name=MongoDB Repository
+baseurl=https://repo.mongodb.org/yum/redhat/\$releasever/mongodb-org/6.0/x86_64/
+gpgcheck=1
+enabled=1
+gpgkey=https://www.mongodb.org/static/pgp/server-6.0.asc" | sudo tee /etc/yum.repos.d/mongodb-org-6.0.repo
+      # Install MongoDB
+      sudo dnf install -y mongodb-org
+      # Start MongoDB
+      sudo systemctl start mongod
+      # Enable MongoDB to start on boot
+      sudo systemctl enable mongod
+
+      if pgrep -x "mongod" >/dev/null; then
+        print_success "MongoDB installed and started"
+        return 0
+      else
+        print_error "MongoDB installed but failed to start"
+        return 1
+      fi
+    else
+      print_error "Cannot detect package manager to install MongoDB"
+      return 1
+    fi
+  elif [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS
+    if command_exists brew; then
+      print_warning "Installing MongoDB using Homebrew..."
+      brew tap mongodb/brew
+      brew install mongodb-community
+      brew services start mongodb-community
+
+      if pgrep -x "mongod" >/dev/null; then
+        print_success "MongoDB installed and started"
+        return 0
+      else
+        print_error "MongoDB installed but failed to start"
+        return 1
+      fi
+    else
+      print_error "Homebrew is required to install MongoDB on macOS"
+      return 1
+    fi
+  else
+    print_error "Cannot install MongoDB on this OS automatically"
+    return 1
+  fi
+}
+
+# Function to test MongoDB connection
+test_mongodb_connection() {
+  local connection_string="$1"
+
+  if command_exists mongosh; then
+    if echo 'db.runCommand({ping:1})' | mongosh "$connection_string" --quiet | grep -q '"ok": 1'; then
+      return 0
+    else
+      return 1
+    fi
+  elif command_exists mongo; then
+    if echo 'db.runCommand({ping:1})' | mongo "$connection_string" --quiet | grep -q '"ok" : 1'; then
+      return 0
+    else
+      return 1
+    fi
+  else
+    # Cannot test connection without mongo client
+    return 2
+  fi
+}
+
+# Function to get MongoDB URI from user or use Docker
 get_mongodb_uri() {
   local default_uri="mongodb://localhost:27017/job-tracking"
+  local default_atlas_uri="mongodb+srv://username:password@cluster0.mongodb.net/job-tracking"
   local use_docker=false
   local use_local_mongodb=false
   local mongodb_uri="$default_uri"
+  local mongodb_local_status
+  local docker_available=false
+  local docker_running=false
+  local auto_decide=false
 
+  # Check if MongoDB is installed and running locally
+  check_mongodb_local
+  mongodb_local_status=$?
+
+  # Check if Docker is available and running
   if command_exists docker && command_exists docker-compose; then
-    if prompt_yes_no "Would you like to use Docker for MongoDB?" "Y"; then
+    docker_available=true
+    if is_docker_running; then
+      print_success "Docker is running"
+      docker_running=true
+    else
+      print_warning "Docker is installed but not running"
+    fi
+  else
+    print_warning "Docker is not available on this system"
+  fi
+
+  # Ask if user wants automatic selection
+  if prompt_yes_no "Do you want the script to automatically choose the best MongoDB option?" "Y"; then
+    auto_decide=true
+
+    # Automatic decision logic
+    if [ "$mongodb_local_status" -eq 0 ]; then
+      # MongoDB is installed and running
+      print_warning "Automatically selecting local MongoDB instance"
+      mongodb_uri="$default_uri"
+      use_local_mongodb=true
+
+      # Test connection
+      if test_mongodb_connection "$mongodb_uri"; then
+        print_success "Successfully connected to local MongoDB"
+      else
+        print_warning "Local MongoDB connection test failed, but proceeding anyway"
+      fi
+    elif [ "$docker_available" = true ] && [ "$docker_running" = true ]; then
+      # Use Docker
       use_docker=true
       use_local_mongodb=true
-      # Start MongoDB container
-      print_step "Starting MongoDB with Docker"
-
-      # Navigate to backend directory which should contain docker-compose.yml
-      cd backend || { print_error "Could not navigate to backend directory"; exit 1; }
-
-      # Check if docker-compose.yml exists for MongoDB
-      if [ ! -f "docker-compose.yml" ]; then
-        print_warning "docker-compose.yml not found in backend directory. Creating one..."
-        cat > docker-compose.yml << EOL
-version: '3.8'
-services:
-  mongodb:
-    image: mongo:6
-    container_name: job-tracking-mongodb
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_data:/data/db
-    restart: unless-stopped
-    profiles:
-      - local-mongodb
-
-volumes:
-  mongodb_data:
-EOL
-        print_success "Created docker-compose.yml file"
+      print_warning "Automatically selecting Docker for MongoDB"
+      setup_mongodb_docker
+    elif [ "$mongodb_local_status" -eq 1 ]; then
+      # MongoDB installed but not running, try to start it
+      print_warning "Found MongoDB installation that's not running. Attempting to start..."
+      if start_mongodb_local; then
+        mongodb_uri="$default_uri"
+        use_local_mongodb=true
+      else
+        # Try Docker as fallback if available but not running
+        if [ "$docker_available" = true ] && [ "$docker_running" = false ]; then
+          print_warning "Attempting to start Docker..."
+          if start_docker; then
+            use_docker=true
+            use_local_mongodb=true
+            setup_mongodb_docker
+          else
+            # Use Atlas as last resort
+            print_warning "Falling back to MongoDB Atlas"
+            mongodb_uri=$(prompt_with_default "Enter your MongoDB Atlas connection URI" "$default_atlas_uri")
+            use_local_mongodb=false
+          fi
+        else
+          # Use Atlas
+          print_warning "Falling back to MongoDB Atlas"
+          mongodb_uri=$(prompt_with_default "Enter your MongoDB Atlas connection URI" "$default_atlas_uri")
+          use_local_mongodb=false
+        fi
       fi
+    else
+      # No MongoDB, try to install it
+      print_warning "No local MongoDB found. Attempting to install automatically..."
+      if install_mongodb; then
+        mongodb_uri="$default_uri"
+        use_local_mongodb=true
+      else
+        # Try Docker as fallback
+        if [ "$docker_available" = true ]; then
+          if [ "$docker_running" = false ]; then
+            print_warning "Attempting to start Docker..."
+            start_docker
+          fi
 
-      # Create .env file with USE_LOCAL_MONGODB=true
-      cat > .env << EOL
+          if is_docker_running; then
+            use_docker=true
+            use_local_mongodb=true
+            setup_mongodb_docker
+          else
+            # Use Atlas as last resort
+            print_warning "Falling back to MongoDB Atlas"
+            mongodb_uri=$(prompt_with_default "Enter your MongoDB Atlas connection URI" "$default_atlas_uri")
+            use_docker=false
+            use_local_mongodb=false
+          fi
+        else
+          # Use Atlas
+          print_warning "Falling back to MongoDB Atlas"
+          mongodb_uri=$(prompt_with_default "Enter your MongoDB Atlas connection URI" "$default_atlas_uri")
+          use_local_mongodb=false
+        fi
+      fi
+    fi
+  else
+    # Manual selection
+    echo -e "\n${YELLOW}MongoDB Connection Options:${NC}"
+    echo "1) Use MongoDB Atlas (cloud-hosted)"
+    echo "2) Use MongoDB locally with Docker"
+    echo "3) Use existing local MongoDB instance"
+    echo "4) Install MongoDB locally (automatic)"
+
+    read -p "Choose MongoDB connection option [1-4] (default: 2): " mongo_choice
+    mongo_choice=${mongo_choice:-2}
+
+    case $mongo_choice in
+      1)
+        # MongoDB Atlas option
+        print_warning "Using MongoDB Atlas (cloud-hosted)"
+        mongodb_uri=$(prompt_with_default "Enter your MongoDB Atlas connection URI" "$default_atlas_uri")
+        use_local_mongodb=false
+        ;;
+      2)
+        # Docker option
+        print_warning "Using local MongoDB via Docker"
+
+        if [ "$docker_available" = false ]; then
+          print_error "Docker is not installed"
+          print_warning "Falling back to MongoDB Atlas"
+          mongodb_uri=$(prompt_with_default "Enter your MongoDB Atlas connection URI" "$default_atlas_uri")
+          use_local_mongodb=false
+        else
+          if [ "$docker_running" = false ]; then
+            print_error "Docker is installed but not running"
+            if prompt_yes_no "Would you like to try starting Docker now?" "Y"; then
+              if start_docker; then
+                docker_running=true
+              else
+                print_warning "Falling back to MongoDB Atlas"
+                mongodb_uri=$(prompt_with_default "Enter your MongoDB Atlas connection URI" "$default_atlas_uri")
+                use_local_mongodb=false
+                break
+              fi
+            else
+              print_warning "Falling back to MongoDB Atlas"
+              mongodb_uri=$(prompt_with_default "Enter your MongoDB Atlas connection URI" "$default_atlas_uri")
+              use_local_mongodb=false
+              break
+            fi
+          fi
+
+          if [ "$docker_running" = true ]; then
+            use_docker=true
+            use_local_mongodb=true
+            setup_mongodb_docker
+          fi
+        fi
+        ;;
+      3)
+        # Local MongoDB instance option
+        print_warning "Using existing local MongoDB instance"
+        if [ "$mongodb_local_status" -eq 0 ]; then
+          print_success "Local MongoDB is running"
+        elif [ "$mongodb_local_status" -eq 1 ]; then
+          print_warning "Local MongoDB is not running"
+          if prompt_yes_no "Would you like to start MongoDB now?" "Y"; then
+            start_mongodb_local
+          fi
+        else
+          print_error "MongoDB is not installed locally"
+          print_warning "Falling back to MongoDB Atlas"
+          mongodb_uri=$(prompt_with_default "Enter your MongoDB Atlas connection URI" "$default_atlas_uri")
+          use_local_mongodb=false
+          break
+        fi
+        mongodb_uri=$(prompt_with_default "Enter your local MongoDB connection URI" "$default_uri")
+        use_local_mongodb=true
+        ;;
+      4)
+        # Install MongoDB locally
+        print_warning "Installing MongoDB locally"
+        if install_mongodb; then
+          mongodb_uri="$default_uri"
+          use_local_mongodb=true
+        else
+          print_warning "Falling back to MongoDB Atlas"
+          mongodb_uri=$(prompt_with_default "Enter your MongoDB Atlas connection URI" "$default_atlas_uri")
+          use_local_mongodb=false
+        fi
+        ;;
+      *)
+        # Invalid option
+        print_error "Invalid option. Defaulting to MongoDB Atlas."
+        mongodb_uri=$(prompt_with_default "Enter your MongoDB Atlas connection URI" "$default_atlas_uri")
+        use_local_mongodb=false
+        ;;
+    esac
+  fi
+
+  # Return both URI and whether using local MongoDB as an array
+  echo "$mongodb_uri:$use_local_mongodb"
+}
+
+# Function to set up MongoDB with Docker
+setup_mongodb_docker() {
+  print_step "Starting MongoDB with Docker"
+
+  # Navigate to root directory which contains docker-compose.yml
+  local script_dir=$(dirname "$0")
+  local root_dir=$(dirname "$script_dir")
+
+  cd "$root_dir" || { print_error "Could not navigate to project root directory"; exit 1; }
+
+  if [ ! -f "docker-compose.yml" ]; then
+    print_error "docker-compose.yml not found in project root directory."
+    print_warning "Cannot start MongoDB with Docker. Using default connection string."
+    mongodb_uri="$default_uri"
+    use_docker=false
+    use_local_mongodb=false
+  else
+    # Create .env file with necessary MongoDB configurations
+    cat > .env << EOL
 USE_LOCAL_MONGODB=true
 MONGODB_ROOT_USERNAME=admin
 MONGODB_ROOT_PASSWORD=password
 MONGODB_DATABASE=job-tracking
 EOL
-      print_success "Created .env file with USE_LOCAL_MONGODB=true"
+    print_success "Created .env file with USE_LOCAL_MONGODB=true"
 
-      # Start MongoDB container in detached mode with local-mongodb profile
-      docker-compose --profile local-mongodb up -d mongodb
-
-      # Go back to original directory
-      cd ..
-
-      print_success "MongoDB Docker container is running"
-    else
-      # User doesn't want to use Docker
-      print_warning "Not using Docker for MongoDB"
-      mongodb_uri=$(prompt_with_default "Enter your MongoDB connection URI" "$default_uri")
+    # Start only the MongoDB container with the local-mongodb profile
+    docker-compose --profile local-mongodb up -d mongodb
+    if [ $? -ne 0 ]; then
+      print_error "Failed to start MongoDB container"
+      print_warning "Falling back to MongoDB Atlas"
+      mongodb_uri=$(prompt_with_default "Enter your MongoDB Atlas connection URI" "$default_atlas_uri")
+      use_docker=false
       use_local_mongodb=false
+    else
+      print_success "MongoDB Docker container is running"
+      # Use the default MongoDB URI for Docker
+      mongodb_uri="mongodb://admin:password@localhost:27017/job-tracking"
     fi
-  else
-    print_warning "Docker or docker-compose not found. Cannot start MongoDB container."
-    mongodb_uri=$(prompt_with_default "Enter your MongoDB connection URI" "$default_uri")
-    use_local_mongodb=false
   fi
 
-  # Return both URI and whether using local MongoDB as an array
-  echo "$mongodb_uri:$use_local_mongodb"
+  # Navigate back to original directory
+  cd - > /dev/null
 }
 
 # Check prerequisite tools and versions

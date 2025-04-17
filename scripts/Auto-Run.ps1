@@ -67,75 +67,442 @@ function New-FileIfNotExists {
 # Function to get MongoDB URI from user or use Docker
 function Get-MongoDbUri {
     $defaultUri = "mongodb://localhost:27017/job-tracking"
+    $defaultAtlasUri = "mongodb+srv://username:password@cluster0.mongodb.net/job-tracking"
     $useDocker = $false
     $mongodbUri = $defaultUri
     $useLocalMongodb = $false
+    $mongoDbLocalInstalled = $false
 
+    # Check if MongoDB is already installed locally
     try {
+        $mongoVersion = mongod --version | Out-String
+        if ($mongoVersion -match "db version v(\d+\.\d+\.\d+)") {
+            Write-Host "✅ MongoDB is already installed locally (version: $($Matches[1]))" -ForegroundColor Green
+            $mongoDbLocalInstalled = $true
+        }
+    } catch {
+        $mongoDbLocalInstalled = $false
+    }
+
+    # Check if MongoDB service is running
+    $mongoDbRunning = $false
+    if ($mongoDbLocalInstalled) {
+        try {
+            $mongoStatus = Get-Service -Name "MongoDB" -ErrorAction SilentlyContinue
+            if ($mongoStatus -and $mongoStatus.Status -eq "Running") {
+                Write-Host "✅ MongoDB service is running" -ForegroundColor Green
+                $mongoDbRunning = $true
+            } else {
+                Write-Host "⚠️ MongoDB is installed but service is not running" -ForegroundColor Yellow
+                try {
+                    Start-Service -Name "MongoDB" -ErrorAction SilentlyContinue
+                    Write-Host "✅ Successfully started MongoDB service" -ForegroundColor Green
+                    $mongoDbRunning = $true
+                } catch {
+                    Write-Host "❌ Failed to start MongoDB service" -ForegroundColor Red
+                }
+            }
+        } catch {
+            Write-Host "⚠️ MongoDB service not found" -ForegroundColor Yellow
+        }
+    }
+
+    # Check if Docker is available and running
+    $dockerAvailable = $false
+    $dockerRunning = $false
+    try {
+        # Check if Docker is installed
         docker --version | Out-Null
         docker-compose --version | Out-Null
+        $dockerAvailable = $true
 
-        if (Read-YesNo "Would you like to use Docker for MongoDB?" "Y") {
+        # Check if Docker is running by trying a simple command
+        docker info | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "✅ Docker is running" -ForegroundColor Green
+            $dockerRunning = $true
+        } else {
+            Write-Host "⚠️ Docker is installed but not running" -ForegroundColor Yellow
+            $dockerRunning = $false
+        }
+    } catch {
+        $dockerAvailable = $false
+        $dockerRunning = $false
+        Write-Host "⚠️ Docker is not available on this system" -ForegroundColor Yellow
+    }
+
+    # Function to check MongoDB connection
+    function Test-MongoDbConnection {
+        param(
+            [string]$ConnectionString
+        )
+
+        try {
+            # If mongosh is available, use it to test connection
+            if (Get-Command mongosh -ErrorAction SilentlyContinue) {
+                $testCommand = "mongosh `"$ConnectionString`" --eval `"db.runCommand({ping:1})`" --quiet"
+                $result = Invoke-Expression $testCommand -ErrorAction SilentlyContinue
+                if ($result -match "1") {
+                    return $true
+                }
+            }
+            return $false
+        } catch {
+            return $false
+        }
+    }
+
+    # Make automatic decision if specified
+    $autoDecide = (Read-YesNo "Do you want the script to automatically choose the best MongoDB option?" "Y")
+
+    if ($autoDecide) {
+        # Automatic decision logic
+        if ($mongoDbRunning) {
+            # Use existing local MongoDB if it's already running
+            Write-Host "🔄 Automatically selecting local MongoDB instance" -ForegroundColor Cyan
+            $mongodbUri = $defaultUri
+            $useLocalMongodb = $true
+
+            # Test connection
+            if (Test-MongoDbConnection -ConnectionString $mongodbUri) {
+                Write-Host "✅ Successfully connected to local MongoDB" -ForegroundColor Green
+            } else {
+                Write-Host "⚠️ Local MongoDB connection test failed, but proceeding anyway" -ForegroundColor Yellow
+            }
+        } elseif ($dockerAvailable -and $dockerRunning) {
+            # Use Docker if available and no local MongoDB
             $useDocker = $true
             $useLocalMongodb = $true
+            Write-Host "🔄 Automatically selecting Docker for MongoDB" -ForegroundColor Cyan
+
             # Start MongoDB container
             Write-StepHeader "Starting MongoDB with Docker"
 
-            # Navigate to backend directory which should contain docker-compose.yml
+            # Navigate to root directory which contains docker-compose.yml
             $scriptDir = $PSScriptRoot
-            $rootDir = Split-Path -Parent (Split-Path -Parent $scriptDir)
-            $backendDir = Join-Path -Path $rootDir -ChildPath "backend"
+            $rootDir = Split-Path -Parent $scriptDir
 
-            Push-Location -Path $backendDir
+            Push-Location -Path $rootDir
             if (-not (Test-Path -Path "docker-compose.yml")) {
-                Write-Host "⚠️ docker-compose.yml not found in backend directory. Creating one..." -ForegroundColor Yellow
-                @"
-version: '3.8'
-services:
-  mongodb:
-    image: mongo:6
-    container_name: job-tracking-mongodb
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_data:/data/db
-    restart: unless-stopped
-    profiles:
-      - local-mongodb
-
-volumes:
-  mongodb_data:
-"@ | Set-Content -Path "docker-compose.yml" -Encoding UTF8
-                Write-Host "✅ Created docker-compose.yml file" -ForegroundColor Green
-            }
-
-            # Create .env file with USE_LOCAL_MONGODB=true
-            $envContent = @"
+                Write-Host "❌ docker-compose.yml not found in project root directory." -ForegroundColor Red
+                Write-Host "⚠️ Cannot start MongoDB with Docker. Using default connection string." -ForegroundColor Yellow
+                $useDocker = $false
+                $useLocalMongodb = $false
+            } else {
+                # Create .env file with necessary MongoDB configurations
+                $envContent = @"
 USE_LOCAL_MONGODB=true
 MONGODB_ROOT_USERNAME=admin
 MONGODB_ROOT_PASSWORD=password
 MONGODB_DATABASE=job-tracking
 "@
-            Set-Content -Path ".env" -Value $envContent -Encoding UTF8
-            Write-Host "✅ Created .env file with USE_LOCAL_MONGODB=true" -ForegroundColor Green
+                Set-Content -Path ".env" -Value $envContent -Encoding UTF8
+                Write-Host "✅ Created .env file with USE_LOCAL_MONGODB=true" -ForegroundColor Green
 
-            # Start MongoDB container in detached mode with local-mongodb profile
-            docker-compose --profile local-mongodb up -d mongodb
+                # Start only the MongoDB container with the local-mongodb profile
+                docker-compose --profile local-mongodb up -d mongodb
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Host "❌ Failed to start MongoDB container" -ForegroundColor Red
+                    Write-Host "⚠️ Falling back to MongoDB Atlas. Enter your connection details:" -ForegroundColor Yellow
+                    $mongodbUri = Read-InputWithDefault "Enter your MongoDB Atlas connection URI" $defaultAtlasUri
+                    $useDocker = $false
+                    $useLocalMongodb = $false
+                } else {
+                    Write-Host "✅ MongoDB Docker container is running" -ForegroundColor Green
+                    # Use the default MongoDB URI for Docker
+                    $mongodbUri = "mongodb://admin:password@localhost:27017/job-tracking"
+                }
+            }
 
             # Go back to original directory
             Pop-Location
-
-            Write-Host "✅ MongoDB Docker container is running" -ForegroundColor Green
         } else {
-            # User doesn't want to use Docker
-            Write-Host "⚠️ Not using Docker for MongoDB" -ForegroundColor Yellow
-            $mongodbUri = Read-InputWithDefault "Enter your MongoDB connection URI" $defaultUri
-            $useLocalMongodb = $false
+            # Try to install MongoDB automatically
+            Write-Host "🔄 No local MongoDB or Docker found. Attempting to install MongoDB automatically..." -ForegroundColor Cyan
+
+            # Check for Chocolatey
+            $chocoInstalled = $false
+            try {
+                choco --version | Out-Null
+                $chocoInstalled = $true
+            } catch {
+                $chocoInstalled = $false
+            }
+
+            if (-not $chocoInstalled) {
+                Write-Host "🔄 Installing Chocolatey package manager..." -ForegroundColor Cyan
+                try {
+                    Set-ExecutionPolicy Bypass -Scope Process -Force
+                    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+                    $installCommand = "(New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1') | Invoke-Expression"
+                    Invoke-Expression -Command $installCommand
+
+                    # Refresh environment variables
+                    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+
+                    Write-Host "✅ Chocolatey installed successfully" -ForegroundColor Green
+                    $chocoInstalled = $true
+                } catch {
+                    Write-Host "❌ Failed to install Chocolatey" -ForegroundColor Red
+                }
+            }
+
+            # Install MongoDB using Chocolatey
+            if ($chocoInstalled) {
+                Write-Host "🔄 Installing MongoDB using Chocolatey..." -ForegroundColor Cyan
+                try {
+                    choco install mongodb -y
+
+                    # Refresh environment variables
+                    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+
+                    Write-Host "✅ MongoDB installed successfully" -ForegroundColor Green
+
+                    # Try to start MongoDB service
+                    try {
+                        Start-Service -Name MongoDB
+                        Write-Host "✅ MongoDB service started" -ForegroundColor Green
+                        $mongoDbRunning = $true
+                        $useLocalMongodb = $true
+                    } catch {
+                        Write-Host "❌ Failed to start MongoDB service" -ForegroundColor Red
+                    }
+                } catch {
+                    Write-Host "❌ Failed to install MongoDB" -ForegroundColor Red
+                }
+            }
+
+            # If automatic installation failed, use Atlas
+            if (-not $mongoDbRunning) {
+                Write-Host "⚠️ Automatic MongoDB setup failed. Falling back to MongoDB Atlas." -ForegroundColor Yellow
+                $mongodbUri = Read-InputWithDefault "Enter your MongoDB Atlas connection URI" $defaultAtlasUri
+                $useLocalMongodb = $false
+            }
         }
-    } catch {
-        Write-Host "⚠️ Docker or docker-compose not found. Cannot start MongoDB container." -ForegroundColor Yellow
-        $mongodbUri = Read-InputWithDefault "Enter your MongoDB connection URI" $defaultUri
-        $useLocalMongodb = $false
+    } else {
+        # Manual selection
+        Write-Host "MongoDB Connection Options:" -ForegroundColor Yellow
+        Write-Host "1) Use MongoDB Atlas (cloud-hosted)" -ForegroundColor White
+        Write-Host "2) Use MongoDB locally with Docker" -ForegroundColor White
+        Write-Host "3) Use existing local MongoDB instance" -ForegroundColor White
+        if (-not $mongoDbLocalInstalled) {
+            Write-Host "4) Install MongoDB locally (automatic)" -ForegroundColor White
+        }
+        $mongoChoice = Read-Host "Choose MongoDB connection option [1-4] (default: 2)"
+
+        if ([string]::IsNullOrWhiteSpace($mongoChoice)) {
+            $mongoChoice = "2"
+        }
+
+        switch ($mongoChoice) {
+            "1" {
+                # MongoDB Atlas option
+                Write-Host "Using MongoDB Atlas (cloud-hosted)" -ForegroundColor Cyan
+                $mongodbUri = Read-InputWithDefault "Enter your MongoDB Atlas connection URI" $defaultAtlasUri
+                $useLocalMongodb = $false
+            }
+            "2" {
+                # Docker option
+                Write-Host "Using local MongoDB via Docker" -ForegroundColor Cyan
+
+                try {
+                    # Check if Docker is installed
+                    docker --version | Out-Null
+                    docker-compose --version | Out-Null
+
+                    # Check if Docker is running
+                    docker info | Out-Null
+                    if ($LASTEXITCODE -ne 0) {
+                        Write-Host "❌ Docker is installed but not running" -ForegroundColor Red
+                        $startDocker = Read-YesNo "Would you like to try starting Docker Desktop now?" "Y"
+                        if ($startDocker) {
+                            Write-Host "🔄 Attempting to start Docker Desktop..." -ForegroundColor Cyan
+                            try {
+                                Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe" -ErrorAction SilentlyContinue
+                                Write-Host "⏳ Waiting for Docker to start (this may take a minute)..." -ForegroundColor Cyan
+
+                                # Wait for Docker to start (try up to 6 times with 10 second intervals)
+                                $dockerStarted = $false
+                                for ($i = 0; $i -lt 6; $i++) {
+                                    Start-Sleep -Seconds 10
+                                    docker info | Out-Null
+                                    if ($LASTEXITCODE -eq 0) {
+                                        Write-Host "✅ Docker started successfully" -ForegroundColor Green
+                                        $dockerStarted = $true
+                                        break
+                                    }
+                                    Write-Host "⏳ Still waiting for Docker to start..." -ForegroundColor Yellow
+                                }
+
+                                if (-not $dockerStarted) {
+                                    Write-Host "❌ Docker failed to start in the expected time" -ForegroundColor Red
+                                    Write-Host "⚠️ Falling back to MongoDB Atlas. Enter your connection details:" -ForegroundColor Yellow
+                                    $mongodbUri = Read-InputWithDefault "Enter your MongoDB Atlas connection URI" $defaultAtlasUri
+                                    $useDocker = $false
+                                    $useLocalMongodb = $false
+
+                                    # Skip the rest of the Docker setup
+                                    break
+                                }
+                            } catch {
+                                Write-Host "❌ Failed to start Docker Desktop" -ForegroundColor Red
+                                Write-Host "⚠️ Falling back to MongoDB Atlas. Enter your connection details:" -ForegroundColor Yellow
+                                $mongodbUri = Read-InputWithDefault "Enter your MongoDB Atlas connection URI" $defaultAtlasUri
+                                $useDocker = $false
+                                $useLocalMongodb = $false
+
+                                # Skip the rest of the Docker setup
+                                break
+                            }
+                        } else {
+                            # User chose not to start Docker
+                            Write-Host "⚠️ Falling back to MongoDB Atlas. Enter your connection details:" -ForegroundColor Yellow
+                            $mongodbUri = Read-InputWithDefault "Enter your MongoDB Atlas connection URI" $defaultAtlasUri
+                            $useDocker = $false
+                            $useLocalMongodb = $false
+
+                            # Skip the rest of the Docker setup
+                            break
+                        }
+                    }
+
+                    # Docker is running, so proceed with setup
+                    $useDocker = $true
+                    $useLocalMongodb = $true
+
+                    # Start MongoDB container
+                    Write-StepHeader "Starting MongoDB with Docker"
+
+                    # Navigate to root directory which contains docker-compose.yml
+                    $scriptDir = $PSScriptRoot
+                    $rootDir = Split-Path -Parent $scriptDir
+
+                    Push-Location -Path $rootDir
+                    if (-not (Test-Path -Path "docker-compose.yml")) {
+                        Write-Host "❌ docker-compose.yml not found in project root directory." -ForegroundColor Red
+                        Write-Host "⚠️ Cannot start MongoDB with Docker. Using default connection string." -ForegroundColor Yellow
+                        $useDocker = $false
+                        $useLocalMongodb = $false
+                    } else {
+                        # Create .env file with necessary MongoDB configurations
+                        $envContent = @"
+USE_LOCAL_MONGODB=true
+MONGODB_ROOT_USERNAME=admin
+MONGODB_ROOT_PASSWORD=password
+MONGODB_DATABASE=job-tracking
+"@
+                        Set-Content -Path ".env" -Value $envContent -Encoding UTF8
+                        Write-Host "✅ Created .env file with USE_LOCAL_MONGODB=true" -ForegroundColor Green
+
+                        # Start only the MongoDB container with the local-mongodb profile
+                        docker-compose --profile local-mongodb up -d mongodb
+                        if ($LASTEXITCODE -ne 0) {
+                            Write-Host "❌ Failed to start MongoDB container" -ForegroundColor Red
+                            Write-Host "⚠️ Falling back to MongoDB Atlas. Enter your connection details:" -ForegroundColor Yellow
+                            $mongodbUri = Read-InputWithDefault "Enter your MongoDB Atlas connection URI" $defaultAtlasUri
+                            $useDocker = $false
+                            $useLocalMongodb = $false
+                        } else {
+                            Write-Host "✅ MongoDB Docker container is running" -ForegroundColor Green
+                            # Use the default MongoDB URI for Docker
+                            $mongodbUri = "mongodb://admin:password@localhost:27017/job-tracking"
+                        }
+                    }
+
+                    # Go back to original directory
+                    Pop-Location
+                } catch {
+                    Write-Host "❌ Docker or docker-compose not found. Cannot start MongoDB container." -ForegroundColor Red
+                    Write-Host "⚠️ Falling back to MongoDB Atlas. Enter your connection details:" -ForegroundColor Yellow
+                    $mongodbUri = Read-InputWithDefault "Enter your MongoDB Atlas connection URI" $defaultAtlasUri
+                    $useDocker = $false
+                    $useLocalMongodb = $false
+                }
+            }
+            "3" {
+                # Local MongoDB instance option
+                Write-Host "Using existing local MongoDB instance" -ForegroundColor Cyan
+                if ($mongoDbRunning) {
+                    Write-Host "✅ Local MongoDB is running" -ForegroundColor Green
+                } else {
+                    Write-Host "⚠️ Local MongoDB is not running or not detected. Starting up if possible..." -ForegroundColor Yellow
+                    try {
+                        Start-Service -Name MongoDB -ErrorAction SilentlyContinue
+                        Write-Host "✅ MongoDB service started" -ForegroundColor Green
+                    } catch {
+                        Write-Host "❌ Failed to start MongoDB service" -ForegroundColor Red
+                    }
+                }
+                $mongodbUri = Read-InputWithDefault "Enter your local MongoDB connection URI" $defaultUri
+                $useLocalMongodb = $true
+            }
+            "4" {
+                # Install MongoDB locally
+                if (-not $mongoDbLocalInstalled) {
+                    Write-Host "Installing MongoDB locally..." -ForegroundColor Cyan
+
+                    # Check for Chocolatey
+                    $chocoInstalled = $false
+                    try {
+                        choco --version | Out-Null
+                        $chocoInstalled = $true
+                    } catch {
+                        $chocoInstalled = $false
+                    }
+
+                    if (-not $chocoInstalled) {
+                        Write-Host "Installing Chocolatey package manager..." -ForegroundColor Cyan
+                        try {
+                            Set-ExecutionPolicy Bypass -Scope Process -Force
+                            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+                            $installCommand = "(New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1') | Invoke-Expression"
+                            Invoke-Expression -Command $installCommand
+
+                            # Refresh environment variables
+                            $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+
+                            Write-Host "✅ Chocolatey installed successfully" -ForegroundColor Green
+                            $chocoInstalled = $true
+                        } catch {
+                            Write-Host "❌ Failed to install Chocolatey" -ForegroundColor Red
+                        }
+                    }
+
+                    # Install MongoDB using Chocolatey
+                    if ($chocoInstalled) {
+                        try {
+                            choco install mongodb -y
+
+                            # Refresh environment variables
+                            $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+
+                            Write-Host "✅ MongoDB installed successfully" -ForegroundColor Green
+
+                            # Try to start MongoDB service
+                            try {
+                                Start-Service -Name MongoDB
+                                Write-Host "✅ MongoDB service started" -ForegroundColor Green
+                                $mongoDbRunning = $true
+                            } catch {
+                                Write-Host "❌ Failed to start MongoDB service" -ForegroundColor Red
+                            }
+                        } catch {
+                            Write-Host "❌ Failed to install MongoDB" -ForegroundColor Red
+                        }
+                    }
+                }
+
+                # Set MongoDB URI
+                $mongodbUri = $defaultUri
+                $useLocalMongodb = $true
+            }
+            default {
+                # Default to Docker option if invalid input
+                Write-Host "Invalid option. Defaulting to MongoDB Atlas." -ForegroundColor Yellow
+                $mongodbUri = Read-InputWithDefault "Enter your MongoDB Atlas connection URI" $defaultAtlasUri
+                $useLocalMongodb = $false
+            }
+        }
     }
 
     return @{
