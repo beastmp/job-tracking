@@ -525,12 +525,61 @@ MONGODB_DATABASE=job-tracking
             docker rm job-tracking-mongodb | Out-Null
         }
 
+        # Create MongoDB initialization script to set up authentication properly
+        $mongoInitDir = Join-Path -Path $rootDir -ChildPath "mongo-init"
+        if (-not (Test-Path $mongoInitDir)) {
+            New-Item -ItemType Directory -Path $mongoInitDir -Force | Out-Null
+        }
+
+        # Create the initialization script
+        $initScriptPath = Join-Path -Path $mongoInitDir -ChildPath "init-mongo.js"
+        $initScriptContent = @"
+// MongoDB initialization script to properly set up authentication
+db = db.getSiblingDB('admin');
+
+// Check if the user already exists
+var userExists = db.getUser('admin');
+
+// Only create user if it doesn't exist yet
+if (!userExists) {
+    // Create admin user with root role
+    db.createUser({
+        user: 'admin',
+        pwd: 'password',
+        roles: [{ role: 'root', db: 'admin' }]
+    });
+    print('Admin user created successfully');
+}
+
+// Switch to the application database
+db = db.getSiblingDB('job-tracking');
+
+// Create application-specific user if it doesn't already exist
+userExists = db.getUser('admin');
+if (!userExists) {
+    // Create application user with dbOwner role
+    db.createUser({
+        user: 'admin',
+        pwd: 'password',
+        roles: [{ role: 'dbOwner', db: 'job-tracking' }]
+    });
+    print('Application user created successfully');
+}
+
+// Create a test collection to verify permissions
+db.createCollection('test_collection');
+print('Test collection created. Authentication setup complete.');
+"@
+        Set-Content -Path $initScriptPath -Value $initScriptContent -Encoding UTF8
+        Write-Host "✅ Created MongoDB initialization script for authentication" -ForegroundColor Green
+
         # Run MongoDB with the network if it was created successfully, otherwise run standalone
         if (docker network ls --filter "name=$networkName" --format "{{.Name}}" | Select-String -Pattern $networkName -Quiet) {
             Write-Host "🔄 Starting MongoDB container with custom network..." -ForegroundColor Cyan
             docker run --name job-tracking-mongodb -d `
                 --network $networkName `
                 -p 27017:27017 `
+                -v "${mongoInitDir}:/docker-entrypoint-initdb.d" `
                 -e MONGO_INITDB_ROOT_USERNAME=admin `
                 -e MONGO_INITDB_ROOT_PASSWORD=password `
                 -e MONGO_INITDB_DATABASE=job-tracking `
@@ -539,6 +588,7 @@ MONGODB_DATABASE=job-tracking
             Write-Host "🔄 Starting MongoDB container without custom network..." -ForegroundColor Cyan
             docker run --name job-tracking-mongodb -d `
                 -p 27017:27017 `
+                -v "${mongoInitDir}:/docker-entrypoint-initdb.d" `
                 -e MONGO_INITDB_ROOT_USERNAME=admin `
                 -e MONGO_INITDB_ROOT_PASSWORD=password `
                 -e MONGO_INITDB_DATABASE=job-tracking `
@@ -550,17 +600,31 @@ MONGODB_DATABASE=job-tracking
             # Update the connection string to include authSource=admin parameter
             $mongodbUri = "mongodb://admin:password@localhost:27017/job-tracking?authSource=admin"
 
+            # Wait a bit longer for MongoDB initialization
+            Write-Host "🔄 Waiting for MongoDB to initialize (this may take a few seconds)..." -ForegroundColor Cyan
+            Start-Sleep -Seconds 5
+
             # Attempt to test connectivity
             Write-Host "🔄 Testing MongoDB connection..." -ForegroundColor Cyan
-            Start-Sleep -Seconds 3 # Give MongoDB a few seconds to initialize
 
             try {
                 # Simple connection test using Docker exec
-                docker exec job-tracking-mongodb mongosh --quiet --eval "db.runCommand({ping:1})" | Out-Null
+                docker exec job-tracking-mongodb mongosh "mongodb://admin:password@localhost:27017/job-tracking?authSource=admin" --quiet --eval "db.runCommand({ping:1})" | Out-Null
                 if ($LASTEXITCODE -eq 0) {
                     Write-Host "✅ MongoDB connection successful" -ForegroundColor Green
                 } else {
                     Write-Host "⚠️ MongoDB container is running but connection test failed - it may need more time to initialize" -ForegroundColor Yellow
+
+                    # Try again with more time
+                    Write-Host "🔄 Waiting longer for MongoDB to initialize..." -ForegroundColor Cyan
+                    Start-Sleep -Seconds 10
+
+                    docker exec job-tracking-mongodb mongosh "mongodb://admin:password@localhost:27017/job-tracking?authSource=admin" --quiet --eval "db.runCommand({ping:1})" | Out-Null
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Host "✅ MongoDB connection successful after waiting longer" -ForegroundColor Green
+                    } else {
+                        Write-Host "⚠️ MongoDB connection test still failing, but container is running" -ForegroundColor Yellow
+                    }
                 }
             } catch {
                 Write-Host "⚠️ Could not test MongoDB connection, but container appears to be running" -ForegroundColor Yellow
