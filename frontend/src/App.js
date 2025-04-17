@@ -751,21 +751,28 @@ const ExcelUpload = ({ onImportJobs }) => {
 
 function EditJobWrapper({ selectedJob, fetchJob, handleUpdateJob }) {
   const [isLoading, setIsLoading] = useState(true);
+  const [jobId, setJobId] = useState(null);
 
+  // Extract job ID once when component mounts
   useEffect(() => {
+    const id = window.location.pathname.split('/').pop();
+    setJobId(id);
+  }, []);
+
+  // Only fetch job when jobId changes (once)
+  useEffect(() => {
+    if (!jobId) return;
+
     const loadJob = async () => {
       try {
-        const id = window.location.pathname.split('/').pop();
-        if (id) {
-          await fetchJob(id);
-        }
+        await fetchJob(jobId);
       } finally {
         setIsLoading(false);
       }
     };
 
     loadJob();
-  }, [fetchJob]);
+  }, [jobId, fetchJob]);
 
   return isLoading ? (
     <div className="text-center mt-5">
