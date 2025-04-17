@@ -49,18 +49,73 @@ function Read-YesNo {
     return $false
 }
 
-# Function to create file with content if it doesn't exist
-function New-FileIfNotExists {
+# Function to update .env file or create if it doesn't exist
+function Update-EnvFile {
     param(
         [string]$FilePath,
         [string]$Content
     )
 
-    if (-not (Test-Path -Path $FilePath)) {
+    if (Test-Path -Path $FilePath) {
+        # File exists, read its content
+        $existingContent = Get-Content -Path $FilePath -Raw
+
+        # Parse existing content into a hashtable
+        $existingValues = @{}
+        $existingContent -split "`n" | ForEach-Object {
+            $line = $_.Trim()
+            if ($line -and -not $line.StartsWith("#")) {
+                $keyValue = $line -split "=", 2
+                if ($keyValue.Count -eq 2) {
+                    $existingValues[$keyValue[0].Trim()] = $keyValue[1].Trim()
+                }
+            }
+        }
+
+        # Parse new content into a hashtable
+        $newValues = @{}
+        $Content -split "`n" | ForEach-Object {
+            $line = $_.Trim()
+            if ($line -and -not $line.StartsWith("#")) {
+                $keyValue = $line -split "=", 2
+                if ($keyValue.Count -eq 2) {
+                    $newValues[$keyValue[0].Trim()] = $keyValue[1].Trim()
+                }
+            }
+        }
+
+        # Check if there are any differences
+        $isDifferent = $false
+        foreach ($key in $newValues.Keys) {
+            if (-not $existingValues.ContainsKey($key) -or $existingValues[$key] -ne $newValues[$key]) {
+                $isDifferent = $true
+                break
+            }
+        }
+
+        if ($isDifferent) {
+            # Ask if the user wants to update the file
+            Write-Host "The existing .env file at $FilePath has different values." -ForegroundColor Yellow
+            $updateFile = Read-YesNo "Do you want to update the file with new values?" "Y"
+
+            if ($updateFile) {
+                # Create a backup first
+                $backupPath = "$FilePath.backup"
+                Copy-Item -Path $FilePath -Destination $backupPath -Force
+
+                # Update the file
+                Set-Content -Path $FilePath -Value $Content -Encoding UTF8
+                Write-Host "✅ Updated file: $FilePath (backup created at $backupPath)" -ForegroundColor Green
+            } else {
+                Write-Host "✅ Keeping existing file: $FilePath" -ForegroundColor Green
+            }
+        } else {
+            Write-Host "✅ File already exists with same values: $FilePath" -ForegroundColor Green
+        }
+    } else {
+        # File doesn't exist, create it
         Set-Content -Path $FilePath -Value $Content -Encoding UTF8
         Write-Host "✅ Created file: $FilePath" -ForegroundColor Green
-    } else {
-        Write-Host "✅ File already exists: $FilePath" -ForegroundColor Green
     }
 }
 
@@ -496,8 +551,8 @@ MONGODB_ROOT_USERNAME=admin
 MONGODB_ROOT_PASSWORD=password
 MONGODB_DATABASE=job-tracking
 "@
-        Set-Content -Path ".env" -Value $envContent -Encoding UTF8
-        Write-Host "✅ Created .env file with USE_LOCAL_MONGODB=true" -ForegroundColor Green
+        Update-EnvFile -FilePath ".env" -Value $envContent
+        Write-Host "✅ Created or updated .env file with MongoDB configurations" -ForegroundColor Green
 
         # Create a properly configured network for Windows using nat driver
         Write-Host "🔄 Setting up Docker network for MongoDB..." -ForegroundColor Cyan
@@ -769,7 +824,7 @@ MONGODB_ATLAS_URI=$mongodbUri
 }
 
 $backendEnvPath = Join-Path -Path $backendDir -ChildPath ".env"
-New-FileIfNotExists -FilePath $backendEnvPath -Content $backendEnvContent
+Update-EnvFile -FilePath $backendEnvPath -Content $backendEnvContent
 
 # Create frontend .env file
 Write-StepHeader "Creating frontend configuration"
@@ -781,7 +836,7 @@ REACT_APP_API_URL=$apiUrl
 "@
 
 $frontendEnvPath = Join-Path -Path $frontendDir -ChildPath ".env"
-New-FileIfNotExists -FilePath $frontendEnvPath -Content $frontendEnvContent
+Update-EnvFile -FilePath $frontendEnvPath -Content $frontendEnvContent
 
 # Install dependencies
 Write-StepHeader "Installing dependencies"
@@ -894,7 +949,7 @@ PORT=3000
 "@
 
     $tempEnvPath = Join-Path -Path $rootDir -ChildPath ".env.development.local"
-    New-FileIfNotExists -FilePath $tempEnvPath -Content $tempEnvContent
+    Update-EnvFile -FilePath $tempEnvPath -Content $tempEnvContent
 
     # Register cleanup for normal exit
     $cleanupAction = {
