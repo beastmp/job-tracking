@@ -1006,7 +1006,15 @@ function AppMain() {
                 refreshData={refreshData} // Pass down both for backward compatibility
               />
             } />
+
+            {/* Add a catch-all route for 404 errors */}
+            <Route path="*" element={
+              <div className="text-center mt-5">
+                <h2>Page Not Found</h2>
+                <p>The page you are looking for doesn't exist or has been moved.</p>
                 <Link to="/" className="btn btn-primary mt-3">Go to Dashboard</Link>
+              </div>
+            } />
           </Routes>
         </div>
       </div>
