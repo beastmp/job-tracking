@@ -194,6 +194,53 @@ exports.extractFromWebsite = async (req, res) => {
       return res.status(400).json({ message: 'Could not extract job data from the provided URL' });
     }
 
+    // Sanitize the extracted data to ensure clean values are passed to frontend
+    const sanitizeHtml = (data) => {
+      // Helper function to decode HTML entities and remove HTML tags
+      const decodeAndClean = (text) => {
+        if (!text || typeof text !== 'string') return text;
+
+        // First convert HTML entities to characters
+        let decoded = text.replace(/&lt;/g, '<')
+                         .replace(/&gt;/g, '>')
+                         .replace(/&amp;/g, '&')
+                         .replace(/&quot;/g, '"')
+                         .replace(/&#39;/g, "'")
+                         .replace(/&nbsp;/g, ' ');
+
+        // Remove any HTML tags
+        decoded = decoded.replace(/<\/?[^>]+(>|$)/g, ' ');
+
+        // Remove JavaScript content
+        if (decoded.includes('function(') || decoded.includes('$(function')) {
+          return ''; // If it contains JS code, don't use this value at all
+        }
+
+        // Clean up whitespace
+        return decoded.replace(/\s+/g, ' ').trim();
+      };
+
+      // Make a copy of the data to avoid mutating the original
+      let cleanData = { ...data };
+
+      // Clean string fields
+      for (const [key, value] of Object.entries(cleanData)) {
+        if (typeof value === 'string') {
+          cleanData[key] = decodeAndClean(value);
+
+          // If the sanitization removed all content, delete the property instead
+          if (!cleanData[key]) {
+            delete cleanData[key];
+          }
+        }
+      }
+
+      return cleanData;
+    };
+
+    // Sanitize the extracted data
+    const sanitizedData = sanitizeHtml(extractedData);
+
     // If jobId is provided, update the existing job with this data
     if (jobId) {
       try {
@@ -204,14 +251,14 @@ exports.extractFromWebsite = async (req, res) => {
           return res.status(404).json({ message: 'Job not found' });
         }
 
-        // Only update fields that are present in the extracted data
-        for (const [key, value] of Object.entries(extractedData)) {
+        // Only update fields that are present in the sanitized data and not empty
+        for (const [key, value] of Object.entries(sanitizedData)) {
           if (value && job.schema.paths[key]) {
             job[key] = value;
           }
         }
 
-        // Preserve the original website and any extra data
+        // Ensure the job has the original website URL
         job.website = url;
 
         await job.save();
@@ -219,7 +266,7 @@ exports.extractFromWebsite = async (req, res) => {
         return res.status(200).json({
           message: 'Job updated with extracted data',
           job: job,
-          extractedData
+          extractedData: sanitizedData
         });
       } catch (error) {
         console.error('Error updating job with extracted data:', error);
@@ -227,10 +274,10 @@ exports.extractFromWebsite = async (req, res) => {
       }
     }
 
-    // If no jobId, just return the extracted data
+    // If no jobId, just return the sanitized data
     return res.status(200).json({
       message: 'Job data extracted successfully',
-      extractedData
+      extractedData: sanitizedData
     });
 
   } catch (error) {
