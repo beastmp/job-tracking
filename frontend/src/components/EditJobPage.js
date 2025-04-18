@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useLoading } from '../contexts/LoadingContext';
 import JobFormPage from './JobFormPage';
@@ -11,44 +11,74 @@ const EditJobPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const { setLoading, setLoadingMessage } = useLoading();
 
-  // Fetch a single job for editing - use useCallback with minimal dependencies
-  const fetchJob = useCallback(async () => {
-    if (!id) return;
+  // Use refs to track if component is mounted
+  const isMounted = useRef(true);
+  // Track if the initial fetch has happened
+  const initialFetchDone = useRef(false);
 
-    try {
-      setLoading(true, 'Loading job details...');
-      const response = await api.get(`/jobs/${id}`);
-      setSelectedJob(response.data);
-      setError(null);
-      return response.data;
-    } catch (err) {
-      setError('Error fetching job details: ' + (err.response?.data?.message || err.message));
-      return null;
-    } finally {
-      setLoading(false);
-      setIsLoading(false);
-    }
-  }, [id, setLoading]);
+  // Clean up function to prevent state updates after unmount
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  // Fetch job data only once when component mounts
+  useEffect(() => {
+    // Skip if we've already fetched or no ID
+    if (initialFetchDone.current || !id) return;
+
+    const fetchJob = async () => {
+      if (!isMounted.current) return;
+
+      try {
+        setLoading(true, 'Loading job details...');
+        const response = await api.get(`/jobs/${id}`);
+
+        if (isMounted.current) {
+          setSelectedJob(response.data);
+          setError(null);
+        }
+      } catch (err) {
+        if (isMounted.current) {
+          console.error('Error fetching job details:', err);
+          setError('Error fetching job details: ' + (err.response?.data?.message || err.message));
+        }
+      } finally {
+        if (isMounted.current) {
+          setLoading(false);
+          setIsLoading(false);
+          initialFetchDone.current = true;
+        }
+      }
+    };
+
+    fetchJob();
+
+  }, [id, setLoading]); // Only depend on id and setLoading
 
   // Update a job
   const handleUpdateJob = async (jobData) => {
+    if (!isMounted.current) return false;
+
     try {
       setLoadingMessage('Updating job application...');
       setLoading(true);
       await api.put(`/jobs/${jobData._id}`, jobData);
-      setLoading(false);
+
+      if (isMounted.current) {
+        setLoading(false);
+      }
       return true;
     } catch (err) {
-      setError('Error updating job: ' + (err.response?.data?.message || err.message));
-      setLoading(false);
+      if (isMounted.current) {
+        console.error('Error updating job:', err);
+        setError('Error updating job: ' + (err.response?.data?.message || err.message));
+        setLoading(false);
+      }
       return false;
     }
   };
-
-  // Only fetch on mount and when ID changes
-  useEffect(() => {
-    fetchJob();
-  }, [fetchJob]); // fetchJob has id in its dependency list
 
   if (isLoading) {
     return (
