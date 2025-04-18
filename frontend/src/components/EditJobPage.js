@@ -36,6 +36,8 @@ const EditJobPage = () => {
         const response = await api.get(`/jobs/${id}`);
 
         if (isMounted.current) {
+          // Add console.log to display the complete job object
+          console.log('=== FULL JOB OBJECT ===', response.data);
           setSelectedJob(response.data);
           setError(null);
         }
@@ -62,6 +64,8 @@ const EditJobPage = () => {
     if (!isMounted.current) return false;
 
     try {
+      // Also log the job data being sent for update
+      console.log('=== UPDATING JOB OBJECT ===', jobData);
       setLoadingMessage('Updating job application...');
       setLoading(true);
       await api.put(`/jobs/${jobData._id}`, jobData);
