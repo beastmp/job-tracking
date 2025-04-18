@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useLoading } from '../contexts/LoadingContext';
 import JobFormPage from './JobFormPage';
 import api from '../utils/api';
 
 const EditJobPage = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [selectedJob, setSelectedJob] = useState(null);
   const [error, setError] = useState(null);
   const [pageLoading, setPageLoading] = useState(true);
@@ -67,6 +68,8 @@ const EditJobPage = () => {
       setLoading(true);
       await api.put(`/jobs/${jobData._id}`, jobData);
       setLoading(false);
+      // Navigate to the view page after successful update
+      navigate(`/view-job/${id}`);
       return true;
     } catch (err) {
       console.error('Error updating job:', err);
@@ -74,6 +77,10 @@ const EditJobPage = () => {
       setLoading(false);
       return false;
     }
+  };
+
+  const handleViewJob = () => {
+    navigate(`/view-job/${id}`);
   };
 
   // Loading state
@@ -98,8 +105,18 @@ const EditJobPage = () => {
     return <div className="alert alert-warning">No job found with the given ID.</div>;
   }
 
-  // Render job form with data
-  return <JobFormPage job={selectedJob} onSubmit={handleUpdateJob} isEditing={true} />;
+  // Render job form with data and action buttons
+  return (
+    <div>
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <h2>Edit Job Application</h2>
+        <button className="btn btn-secondary" onClick={handleViewJob}>
+          Back to View
+        </button>
+      </div>
+      <JobFormPage job={selectedJob} onSubmit={handleUpdateJob} isEditing={true} />
+    </div>
+  );
 };
 
 export default EditJobPage;

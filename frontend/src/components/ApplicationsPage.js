@@ -391,7 +391,7 @@ const ApplicationsPage = ({ jobs, onDeleteJob, onUpdateStatus, onBulkDeleteJobs,
                     )}
                   </td>
                   <td>
-                    <Link to={`/edit-job/${job._id}`} className="btn btn-sm btn-primary me-2">Edit</Link>
+                    <Link to={`/view-job/${job._id}`} className="btn btn-sm btn-primary me-2">View</Link>
                     <button
                       className="btn btn-sm btn-danger"
                       onClick={() => onDeleteJob(job._id)}

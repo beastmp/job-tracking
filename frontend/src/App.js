@@ -11,6 +11,7 @@ import Dashboard from './components/Dashboard';
 import ApplicationsPage from './components/ApplicationsPage';
 import JobFormPage from './components/JobFormPage';
 import EditJobPage from './components/EditJobPage';
+import ViewJobPage from './components/ViewJobPage';
 import ExcelUploadPage from './components/ExcelUploadPage';
 import EmailIntegration from './components/EmailIntegration';
 import NotFoundPage from './components/NotFoundPage';
@@ -210,6 +211,10 @@ function AppMain() {
 
             <Route path="/add-job" element={
               <JobFormPage onSubmit={handleAddJob} isEditing={false} />
+            } />
+
+            <Route path="/view-job/:id" element={
+              <ViewJobPage />
             } />
 
             <Route path="/edit-job/:id" element={
