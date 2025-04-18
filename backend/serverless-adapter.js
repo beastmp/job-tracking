@@ -30,6 +30,9 @@ const corsOptions = {
       'https://job-tracking-michael-palmers-projects-7bed5f67.vercel.app',
       'https://job-tracking-git-main-michael-palmers-projects-7bed5f67.vercel.app',
       'https://job-tracking-sable.vercel.app',
+      'https://job-tracking-dev-michael-palmers-projects-7bed5f67.vercel.app',
+      'https://job-tracking-dev-git-main-michael-palmers-projects-7bed5f67.vercel.app',
+      'https://job-tracking-dev-sable.vercel.app',
       'http://localhost:3000'
     ];
 
