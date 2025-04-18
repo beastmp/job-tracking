@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 // Get default values from environment variables with fallbacks
@@ -30,6 +30,9 @@ const JobFormPage = ({ job, onSubmit, isEditing }) => {
     notes: ''
   });
 
+  // For tracking submission state
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   // For tracking status checks
   const [statusCheck, setStatusCheck] = useState({
     date: new Date().toISOString().substr(0, 10),
@@ -39,7 +42,8 @@ const JobFormPage = ({ job, onSubmit, isEditing }) => {
   // For handling status checks
   const [statusChecks, setStatusChecks] = useState([]);
 
-  useEffect(() => {
+  // Memoize data initialization to prevent unnecessary re-renders
+  const initializeFormData = useCallback(() => {
     if (job) {
       const jobData = { ...job };
       if (job.applied) {
@@ -57,6 +61,10 @@ const JobFormPage = ({ job, onSubmit, isEditing }) => {
       setFormData(jobData);
     }
   }, [job]);
+
+  useEffect(() => {
+    initializeFormData();
+  }, [initializeFormData]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -77,7 +85,7 @@ const JobFormPage = ({ job, onSubmit, isEditing }) => {
   const addStatusCheck = (e) => {
     e.preventDefault();
     if (statusCheck.date && statusCheck.notes) {
-      setStatusChecks([...statusChecks, { ...statusCheck }]);
+      setStatusChecks(prev => [...prev, { ...statusCheck }]);
       setStatusCheck({
         date: new Date().toISOString().substr(0, 10),
         notes: ''
@@ -91,16 +99,24 @@ const JobFormPage = ({ job, onSubmit, isEditing }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return; // Prevent double submission
+
+    setIsSubmitting(true);
+
     // Add status checks to the form data
     const finalFormData = { ...formData, statusChecks };
 
     try {
-      await onSubmit(finalFormData);
-      // No longer redirecting with page reload, let the router handle navigation
-      navigate('/');
+      const success = await onSubmit(finalFormData);
+      if (success) {
+        // Use navigate without reload
+        navigate('/');
+      }
     } catch (error) {
       console.error('Error saving job:', error);
       // Handle error state if needed
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -115,7 +131,7 @@ const JobFormPage = ({ job, onSubmit, isEditing }) => {
               type="text"
               name="jobTitle"
               className="form-control"
-              value={formData.jobTitle}
+              value={formData.jobTitle || ''}
               onChange={handleChange}
               required
             />
@@ -126,13 +142,14 @@ const JobFormPage = ({ job, onSubmit, isEditing }) => {
               type="text"
               name="company"
               className="form-control"
-              value={formData.company}
+              value={formData.company || ''}
               onChange={handleChange}
               required
             />
           </div>
         </div>
 
+        {/* Rest of the form remains unchanged */}
         <div className="row">
           <div className="col-md-6 mb-3">
             <label className="form-label">Source</label>
@@ -262,7 +279,7 @@ const JobFormPage = ({ job, onSubmit, isEditing }) => {
               type="date"
               name="applied"
               className="form-control"
-              value={formData.applied}
+              value={formData.applied || ''}
               onChange={handleChange}
             />
           </div>
@@ -377,6 +394,7 @@ const JobFormPage = ({ job, onSubmit, isEditing }) => {
                 </div>
                 <div className="col-md-2 d-flex align-items-end">
                   <button
+                    type="button"
                     className="btn btn-secondary w-100"
                     onClick={addStatusCheck}
                   >
@@ -417,8 +435,14 @@ const JobFormPage = ({ job, onSubmit, isEditing }) => {
           </div>
         </div>
 
-        <button type="submit" className="btn btn-primary">
-          {isEditing ? 'Update Job' : 'Add Job'}
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={isSubmitting}
+        >
+          {isSubmitting
+            ? (isEditing ? 'Updating...' : 'Adding...')
+            : (isEditing ? 'Update Job' : 'Add Job')}
         </button>
       </form>
     </div>

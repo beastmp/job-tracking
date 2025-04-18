@@ -11,40 +11,44 @@ const EditJobPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const { setLoading, setLoadingMessage } = useLoading();
 
-  // Fetch a single job for editing - memoized with useCallback
-  const fetchJob = useCallback(async (jobId) => {
+  // Fetch a single job for editing - use useCallback with minimal dependencies
+  const fetchJob = useCallback(async () => {
+    if (!id) return;
+
     try {
       setLoading(true, 'Loading job details...');
-      const response = await api.get(`/jobs/${jobId}`);
+      const response = await api.get(`/jobs/${id}`);
       setSelectedJob(response.data);
-      setLoading(false);
+      setError(null);
       return response.data;
     } catch (err) {
-      setError('Error fetching job details: ' + err.message);
-      setLoading(false);
+      setError('Error fetching job details: ' + (err.response?.data?.message || err.message));
       return null;
     } finally {
+      setLoading(false);
       setIsLoading(false);
     }
-  }, [setLoading, setError]);
+  }, [id, setLoading]);
 
   // Update a job
   const handleUpdateJob = async (jobData) => {
     try {
       setLoadingMessage('Updating job application...');
+      setLoading(true);
       await api.put(`/jobs/${jobData._id}`, jobData);
+      setLoading(false);
       return true;
     } catch (err) {
-      setError('Error updating job: ' + err.message);
+      setError('Error updating job: ' + (err.response?.data?.message || err.message));
+      setLoading(false);
       return false;
     }
   };
 
+  // Only fetch on mount and when ID changes
   useEffect(() => {
-    if (id) {
-      fetchJob(id);
-    }
-  }, [id, fetchJob]);
+    fetchJob();
+  }, [fetchJob]); // fetchJob has id in its dependency list
 
   if (isLoading) {
     return (
