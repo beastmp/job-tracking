@@ -9,6 +9,7 @@ const ViewJobPage = () => {
   const [error, setError] = useState(null);
   const { setLoadingMessage } = useLoading();
   const navigate = useNavigate();
+  const [extractionMessage, setExtractionMessage] = useState(null);
 
   useEffect(() => {
     const fetchJob = async () => {
@@ -36,6 +37,50 @@ const ViewJobPage = () => {
     }
   };
 
+  const handleExtractFromWebsite = async () => {
+    if (!job.website) {
+      setExtractionMessage({
+        type: 'danger',
+        text: 'No website URL available for this job'
+      });
+      return;
+    }
+
+    try {
+      setExtractionMessage({
+        type: 'info',
+        text: 'Extracting job data from website...'
+      });
+
+      setLoadingMessage('Extracting job data from website...');
+      const response = await api.post('/jobs/extract-from-website', {
+        url: job.website,
+        jobId: job._id
+      });
+
+      // Update the job data with the response
+      if (response.data && response.data.job) {
+        setJob(response.data.job);
+
+        setExtractionMessage({
+          type: 'success',
+          text: 'Job data successfully extracted and updated!'
+        });
+      } else {
+        setExtractionMessage({
+          type: 'warning',
+          text: 'Extracted some job data but could not update the job'
+        });
+      }
+    } catch (err) {
+      console.error('Error extracting job data:', err);
+      setExtractionMessage({
+        type: 'danger',
+        text: `Error extracting job data: ${err.response?.data?.message || err.message}`
+      });
+    }
+  };
+
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString();
@@ -53,6 +98,12 @@ const ViewJobPage = () => {
           <button onClick={handleDelete} className="btn btn-danger">Delete</button>
         </div>
       </div>
+
+      {extractionMessage && (
+        <div className={`alert alert-${extractionMessage.type} mb-4`}>
+          {extractionMessage.text}
+        </div>
+      )}
 
       <div className="card mb-4">
         <div className="card-body">
@@ -73,9 +124,18 @@ const ViewJobPage = () => {
                     <th scope="row">Website:</th>
                     <td>
                       {job.website ? (
-                        <a href={job.website} target="_blank" rel="noopener noreferrer">
-                          {job.website}
-                        </a>
+                        <div className="d-flex align-items-center">
+                          <a href={job.website} target="_blank" rel="noopener noreferrer" className="me-2">
+                            {job.website}
+                          </a>
+                          <button
+                            className="btn btn-sm btn-outline-secondary"
+                            onClick={handleExtractFromWebsite}
+                            title="Extract job data from website"
+                          >
+                            <i className="bi bi-cloud-download"></i> Extract Data
+                          </button>
+                        </div>
                       ) : 'N/A'}
                     </td>
                   </tr>

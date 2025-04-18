@@ -23,6 +23,9 @@ router.post('/bulk-delete', jobController.bulkDeleteJobs);
 // POST re-enrich jobs from LinkedIn
 router.post('/re-enrich', jobController.reEnrichJobs);
 
+// POST extract job data from website
+router.post('/extract-from-website', jobController.extractFromWebsite);
+
 // PUT update a job
 router.put('/:id', jobController.updateJob);
 

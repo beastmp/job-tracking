@@ -174,3 +174,67 @@ exports.processStatusEmail = async (req, res) => {
     res.status(500).json({ message: 'Error processing status email', error: error.message });
   }
 };
+
+// Extract job data from website
+exports.extractFromWebsite = async (req, res) => {
+  try {
+    const { url, jobId } = req.body;
+
+    if (!url) {
+      return res.status(400).json({ message: 'URL is required for web extraction' });
+    }
+
+    // Import the web extractor service
+    const webExtractorService = require('../services/webJobExtractorService');
+
+    // Extract job data from the website
+    const extractedData = await webExtractorService.extractJobDataFromWebsite(url);
+
+    if (!extractedData) {
+      return res.status(400).json({ message: 'Could not extract job data from the provided URL' });
+    }
+
+    // If jobId is provided, update the existing job with this data
+    if (jobId) {
+      try {
+        const Job = require('../models/Job');
+        const job = await Job.findById(jobId);
+
+        if (!job) {
+          return res.status(404).json({ message: 'Job not found' });
+        }
+
+        // Only update fields that are present in the extracted data
+        for (const [key, value] of Object.entries(extractedData)) {
+          if (value && job.schema.paths[key]) {
+            job[key] = value;
+          }
+        }
+
+        // Preserve the original website and any extra data
+        job.website = url;
+
+        await job.save();
+
+        return res.status(200).json({
+          message: 'Job updated with extracted data',
+          job: job,
+          extractedData
+        });
+      } catch (error) {
+        console.error('Error updating job with extracted data:', error);
+        return res.status(500).json({ message: 'Error updating job', error: error.message });
+      }
+    }
+
+    // If no jobId, just return the extracted data
+    return res.status(200).json({
+      message: 'Job data extracted successfully',
+      extractedData
+    });
+
+  } catch (error) {
+    console.error('Error extracting data from website:', error);
+    res.status(500).json({ message: 'Error extracting job data from website', error: error.message });
+  }
+};
