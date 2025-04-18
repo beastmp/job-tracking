@@ -251,14 +251,38 @@ exports.extractFromWebsite = async (req, res) => {
           return res.status(404).json({ message: 'Job not found' });
         }
 
-        // Only update fields that are present in the sanitized data and not empty
+        // Define priority fields that should always be updated if available
+        const priorityFields = [
+          'jobTitle',
+          'company',
+          'companyLocation',
+          'employmentType',
+          'locationType',
+          'wagesMin',
+          'wagesMax',
+          'wageType',
+          'externalJobId'
+        ];
+
+        // First update priority fields - these should always be replaced if we have extracted data
+        for (const field of priorityFields) {
+          if (sanitizedData[field] && sanitizedData[field].trim() !== '') {
+            job[field] = sanitizedData[field];
+          }
+        }
+
+        // Then update any other fields that are in the job schema
         for (const [key, value] of Object.entries(sanitizedData)) {
+          // Skip priority fields as we've handled them already
+          if (priorityFields.includes(key)) continue;
+
+          // Update other fields only if they have a value and exist in the schema
           if (value && job.schema.paths[key]) {
             job[key] = value;
           }
         }
 
-        // Ensure the job has the original website URL
+        // Always ensure the job has the original website URL
         job.website = url;
 
         await job.save();
