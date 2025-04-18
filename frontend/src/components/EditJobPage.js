@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useLoading } from '../contexts/LoadingContext';
 import JobFormPage from './JobFormPage';
@@ -8,88 +8,65 @@ const EditJobPage = () => {
   const { id } = useParams();
   const [selectedJob, setSelectedJob] = useState(null);
   const [error, setError] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const { setLoading, setLoadingMessage } = useLoading();
+  const [pageLoading, setPageLoading] = useState(true);
+  const { setLoading } = useLoading();
 
-  // Use refs to track if component is mounted
-  const isMounted = useRef(true);
-  // Track if the initial fetch has happened
-  const initialFetchDone = useRef(false);
-
-  // Clean up function to prevent state updates after unmount
+  // Simple effect to fetch job data once
   useEffect(() => {
-    return () => {
-      isMounted.current = false;
+    let isMounted = true; // Track if component is still mounted
+
+    const fetchJob = async () => {
+      console.log('Fetching job with ID:', id);
+
+      try {
+        // Show global loading indicator
+        setLoading(true);
+
+        // Make API request
+        const response = await api.get(`/jobs/${id}`);
+        console.log('Job data received:', response.data);
+
+        // Only update state if component is still mounted
+        if (isMounted) {
+          setSelectedJob(response.data);
+          setPageLoading(false);
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error('Error fetching job:', err);
+        if (isMounted) {
+          setError(`Error loading job: ${err.message}`);
+          setPageLoading(false);
+          setLoading(false);
+        }
+      }
     };
-  }, []);
 
-  // Create a stable fetch function with useCallback
-  const fetchJob = useCallback(async () => {
-    if (!isMounted.current || !id || initialFetchDone.current) return;
-
-    console.log('[FETCH] Starting fetch for job ID:', id);
-    initialFetchDone.current = true; // Mark as fetched immediately to prevent duplicate calls
-
-    try {
-      setLoading(true);
-      setLoadingMessage('Loading job details...');
-
-      console.log('[FETCH] Making API request to:', `/jobs/${id}`);
-      const response = await api.get(`/jobs/${id}`);
-      console.log('[FETCH] API response received:', response);
-
-      if (isMounted.current) {
-        console.log('[FETCH] Setting job data:', response.data._id);
-        setSelectedJob(response.data);
-        setError(null);
-
-        // Set loading states to false
-        console.log('[FETCH] Setting loading states to false');
-        setIsLoading(false);
-        setLoading(false);
-      }
-    } catch (err) {
-      if (isMounted.current) {
-        console.error('[FETCH] Error fetching job details:', err);
-        setError('Error fetching job details: ' + (err.response?.data?.message || err.message));
-        setIsLoading(false);
-        setLoading(false);
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]); // Only depend on the id
-
-  // Fetch job data only once when component mounts
-  useEffect(() => {
     fetchJob();
-    // No dependencies on context functions, only on the fetchJob callback
-  }, [fetchJob]);
 
-  // Update a job
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
+  }, [id, setLoading]); // Only re-run if ID changes
+
+  // Handle job updates
   const handleUpdateJob = async (jobData) => {
-    if (!isMounted.current) return false;
-
     try {
-      console.log('=== UPDATING JOB OBJECT ===', jobData);
-      setLoadingMessage('Updating job application...');
       setLoading(true);
       await api.put(`/jobs/${jobData._id}`, jobData);
-
-      if (isMounted.current) {
-        setLoading(false);
-      }
+      setLoading(false);
       return true;
     } catch (err) {
-      if (isMounted.current) {
-        console.error('Error updating job:', err);
-        setError('Error updating job: ' + (err.response?.data?.message || err.message));
-        setLoading(false);
-      }
+      console.error('Error updating job:', err);
+      setError(`Failed to update job: ${err.message}`);
+      setLoading(false);
       return false;
     }
   };
 
-  if (isLoading) {
+  // Loading state
+  if (pageLoading) {
     return (
       <div className="text-center mt-5">
         <div className="spinner-border" role="status">
@@ -100,15 +77,18 @@ const EditJobPage = () => {
     );
   }
 
-  return error ? (
-    <div className="alert alert-danger">{error}</div>
-  ) : selectedJob ? (
-    <JobFormPage job={selectedJob} onSubmit={handleUpdateJob} isEditing={true} />
-  ) : (
-    <div className="alert alert-danger">
-      Failed to load job details. Please try again.
-    </div>
-  );
+  // Error state
+  if (error) {
+    return <div className="alert alert-danger">{error}</div>;
+  }
+
+  // No job data found
+  if (!selectedJob) {
+    return <div className="alert alert-warning">No job found with the given ID.</div>;
+  }
+
+  // Render job form with data
+  return <JobFormPage job={selectedJob} onSubmit={handleUpdateJob} isEditing={true} />;
 };
 
 export default EditJobPage;
