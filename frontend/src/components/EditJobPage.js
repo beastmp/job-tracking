@@ -31,12 +31,18 @@ const EditJobPage = () => {
     const fetchJob = async () => {
       if (!isMounted.current) return;
 
+      console.log('Fetching job data for ID:', id);
       try {
-        setLoading(true, 'Loading job details...');
+        setLoading(true);
+        setLoadingMessage('Loading job details...');
+        setIsLoading(true);
+
+        // Adding a debuggable API call
+        console.log('Making API request to:', `/jobs/${id}`);
         const response = await api.get(`/jobs/${id}`);
+        console.log('API response received:', response);
 
         if (isMounted.current) {
-          // Add console.log to display the complete job object
           console.log('=== FULL JOB OBJECT ===', response.data);
           setSelectedJob(response.data);
           setError(null);
@@ -44,10 +50,15 @@ const EditJobPage = () => {
       } catch (err) {
         if (isMounted.current) {
           console.error('Error fetching job details:', err);
+          // Log more details about the error
+          console.error('Error response:', err.response);
+          console.error('Error message:', err.message);
           setError('Error fetching job details: ' + (err.response?.data?.message || err.message));
         }
       } finally {
         if (isMounted.current) {
+          // Ensure both loading states are reset
+          console.log('Resetting loading states');
           setLoading(false);
           setIsLoading(false);
           initialFetchDone.current = true;
@@ -57,7 +68,7 @@ const EditJobPage = () => {
 
     fetchJob();
 
-  }, [id, setLoading]); // Only depend on id and setLoading
+  }, [id, setLoading, setLoadingMessage]); // Added setLoadingMessage to dependencies
 
   // Update a job
   const handleUpdateJob = async (jobData) => {
@@ -84,12 +95,15 @@ const EditJobPage = () => {
     }
   };
 
+  console.log('EditJobPage render state:', { isLoading, selectedJob, error });
+
   if (isLoading) {
     return (
       <div className="text-center mt-5">
         <div className="spinner-border" role="status">
           <span className="visually-hidden">Loading...</span>
         </div>
+        <div className="mt-2">Loading job details...</div>
       </div>
     );
   }
