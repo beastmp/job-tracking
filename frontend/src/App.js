@@ -483,7 +483,10 @@ const ExcelUpload = ({ onImportJobs }) => {
   const [progressMessage, setProgressMessage] = useState('');
 
   // Generate a sample template Excel file
-  const generateExcelTemplate = () => {
+  const generateExcelTemplate = useCallback(() => {
+    // Skip if template URL already exists
+    if (templateUrl) return templateUrl;
+
     const ws = xlsx.utils.json_to_sheet([{
       'Source': 'Example: LinkedIn',
       'Search Type': 'Example: Direct',
@@ -516,10 +519,10 @@ const ExcelUpload = ({ onImportJobs }) => {
     setTemplateUrl(url);
 
     return url;
-  };
+  }, []); // Don't include templateUrl in the dependency array
 
   useEffect(() => {
-    // Generate the template on component mount
+    // Generate the template on component mount only if it doesn't exist
     generateExcelTemplate();
 
     // Clean up on unmount
@@ -528,7 +531,7 @@ const ExcelUpload = ({ onImportJobs }) => {
         URL.revokeObjectURL(templateUrl);
       }
     };
-  }, [templateUrl]);
+  }, [generateExcelTemplate]); // Only depend on the generateExcelTemplate function
 
   const handleFileChange = (e) => {
     if (e.target.files.length > 0) {
