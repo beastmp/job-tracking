@@ -8,7 +8,6 @@ const ViewJobPage = () => {
   const navigate = useNavigate();
   const [job, setJob] = useState(null);
   const [error, setError] = useState(null);
-  const [pageLoading, setPageLoading] = useState(true);
   const { setLoading } = useLoading();
 
   // Use ref to track if we've already fetched data
@@ -44,14 +43,12 @@ const ViewJobPage = () => {
 
         if (isMounted.current) {
           setJob(response.data);
-          setPageLoading(false);
           setLoading(false);
         }
       } catch (err) {
         console.error('Error fetching job:', err);
         if (isMounted.current) {
           setError(`Error loading job: ${err.message}`);
-          setPageLoading(false);
           setLoading(false);
         }
       }
@@ -65,18 +62,6 @@ const ViewJobPage = () => {
     navigate(`/edit-job/${id}`);
   };
 
-  // Loading state
-  if (pageLoading) {
-    return (
-      <div className="text-center mt-5">
-        <div className="spinner-border" role="status">
-          <span className="visually-hidden">Loading...</span>
-        </div>
-        <div className="mt-2">Loading job details...</div>
-      </div>
-    );
-  }
-
   // Error state
   if (error) {
     return <div className="alert alert-danger">{error}</div>;
@@ -84,7 +69,7 @@ const ViewJobPage = () => {
 
   // No job data found
   if (!job) {
-    return <div className="alert alert-warning">No job found with the given ID.</div>;
+    return null; // Return nothing while loading
   }
 
   // Format date strings

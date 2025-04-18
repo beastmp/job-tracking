@@ -9,7 +9,6 @@ const EditJobPage = () => {
   const navigate = useNavigate();
   const [selectedJob, setSelectedJob] = useState(null);
   const [error, setError] = useState(null);
-  const [pageLoading, setPageLoading] = useState(true);
   const { setLoading } = useLoading();
 
   // Use ref to track if we've already fetched data
@@ -45,14 +44,12 @@ const EditJobPage = () => {
 
         if (isMounted.current) {
           setSelectedJob(response.data);
-          setPageLoading(false);
           setLoading(false);
         }
       } catch (err) {
         console.error('Error fetching job:', err);
         if (isMounted.current) {
           setError(`Error loading job: ${err.message}`);
-          setPageLoading(false);
           setLoading(false);
         }
       }
@@ -83,18 +80,6 @@ const EditJobPage = () => {
     navigate(`/view-job/${id}`);
   };
 
-  // Loading state
-  if (pageLoading) {
-    return (
-      <div className="text-center mt-5">
-        <div className="spinner-border" role="status">
-          <span className="visually-hidden">Loading...</span>
-        </div>
-        <div className="mt-2">Loading job details...</div>
-      </div>
-    );
-  }
-
   // Error state
   if (error) {
     return <div className="alert alert-danger">{error}</div>;
@@ -102,7 +87,7 @@ const EditJobPage = () => {
 
   // No job data found
   if (!selectedJob) {
-    return <div className="alert alert-warning">No job found with the given ID.</div>;
+    return null; // Return nothing while loading
   }
 
   // Render job form with data and action buttons
