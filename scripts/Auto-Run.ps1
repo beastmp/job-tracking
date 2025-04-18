@@ -535,7 +535,7 @@ function Test-CommandExists {
     return $false
 }
 
-# Function to setup MongoDB using Docker with Windows network handling
+# Function to setup MongoDB using Docker with Windows network handling - no authentication
 function Setup-MongoDbDocker {
     param (
         [string]$rootDir
@@ -544,15 +544,13 @@ function Setup-MongoDbDocker {
     Push-Location -Path $rootDir
 
     try {
-        # Create .env file with necessary MongoDB configurations
+        # Create .env file with necessary MongoDB configurations - simplified without authentication
         $envContent = @"
 USE_LOCAL_MONGODB=true
-MONGODB_ROOT_USERNAME=admin
-MONGODB_ROOT_PASSWORD=password
 MONGODB_DATABASE=job-tracking
 "@
         Update-EnvFile -FilePath ".env" -Value $envContent
-        Write-Host "✅ Created or updated .env file with MongoDB configurations" -ForegroundColor Green
+        Write-Host "✅ Created or updated .env file with simplified MongoDB configurations" -ForegroundColor Green
 
         # Create a properly configured network for Windows using nat driver
         Write-Host "🔄 Setting up Docker network for MongoDB..." -ForegroundColor Cyan
@@ -580,74 +578,47 @@ MONGODB_DATABASE=job-tracking
             docker rm job-tracking-mongodb | Out-Null
         }
 
-        # For Windows with Hyper-V isolation, use a different approach
-        # Start MongoDB with authentication enabled but without the --auth flag
-        Write-Host "🔄 Starting MongoDB container with authentication..." -ForegroundColor Cyan
+        # Start MongoDB without authentication
+        Write-Host "🔄 Starting MongoDB container without authentication..." -ForegroundColor Cyan
         try {
-            # On Windows, using the --auth parameter as a direct argument fails
-            # Instead, we rely on the environment variables to set up authentication
             if (docker network ls --filter "name=$networkName" --format "{{.Name}}" | Select-String -Pattern $networkName -Quiet) {
                 docker run --name job-tracking-mongodb -d `
                     --network $networkName `
                     -p 27017:27017 `
-                    -e MONGO_INITDB_ROOT_USERNAME=admin `
-                    -e MONGO_INITDB_ROOT_PASSWORD=password `
                     -e MONGO_INITDB_DATABASE=job-tracking `
                     mongo:6
             } else {
                 docker run --name job-tracking-mongodb -d `
                     -p 27017:27017 `
-                    -e MONGO_INITDB_ROOT_USERNAME=admin `
-                    -e MONGO_INITDB_ROOT_PASSWORD=password `
                     -e MONGO_INITDB_DATABASE=job-tracking `
                     mongo:6
             }
 
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "✅ MongoDB container started with authentication enabled" -ForegroundColor Green
+                Write-Host "✅ MongoDB container started without authentication" -ForegroundColor Green
 
-                # MongoDB 6.0+ automatically enables authentication when MONGO_INITDB_ROOT_USERNAME is set
-                # Update the connection string to include authSource=admin parameter
-                $mongodbUri = "mongodb://admin:password@localhost:27017/job-tracking?authSource=admin"
+                # Simple connection string without authentication
+                $mongodbUri = "mongodb://localhost:27017/job-tracking"
 
                 # Wait for MongoDB to initialize
                 Write-Host "🔄 Waiting for MongoDB to initialize..." -ForegroundColor Cyan
                 Start-Sleep -Seconds 5
 
-                Write-Host "✅ MongoDB connection URI configured: $($mongodbUri.Replace('password', '*****'))" -ForegroundColor Green
+                Write-Host "✅ MongoDB connection URI configured: $mongodbUri" -ForegroundColor Green
 
                 return @{
                     Success = $true
                     Uri = $mongodbUri
                 }
             } else {
-                Write-Host "❌ Failed to start MongoDB container with authentication" -ForegroundColor Red
-                # Fall through to minimal configuration attempt
+                Write-Host "❌ Failed to start MongoDB container" -ForegroundColor Red
+                return @{
+                    Success = $false
+                    Uri = ""
+                }
             }
         } catch {
             Write-Host "❌ Error starting MongoDB container: $_" -ForegroundColor Red
-            # Fall through to minimal configuration attempt
-        }
-
-        # Try simple run as a last resort - with explicit container removal to avoid conflicts
-        Write-Host "⚠️ Trying minimal configuration as last resort..." -ForegroundColor Yellow
-
-        # Make sure there's no conflicting container
-        docker stop job-tracking-mongodb 2>$null
-        docker rm job-tracking-mongodb 2>$null
-
-        docker run --name job-tracking-mongodb -d mongo:6
-
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ MongoDB container started with minimal configuration (no authentication)" -ForegroundColor Green
-            # No authentication in minimal config
-            $mongodbUri = "mongodb://localhost:27017/job-tracking"
-            return @{
-                Success = $true
-                Uri = $mongodbUri
-            }
-        } else {
-            Write-Host "❌ All attempts to start MongoDB container failed" -ForegroundColor Red
             return @{
                 Success = $false
                 Uri = ""
@@ -788,30 +759,15 @@ $nodeEnv = Read-InputWithDefault "Enter the NODE_ENV value" "development"
 
 # Create the backend/.env file
 if ($useLocalMongodb) {
-    # Update MongoDB URI to include authSource=admin for proper authentication
-    if ($mongodbUri -notlike "*authSource=admin*" -and $mongodbUri -like "mongodb://*:*@*") {
-        # Only add authSource if we have authentication in the URI and it's not already there
-        if ($mongodbUri -like "*\?*") {
-            # URL already has parameters, append to them
-            $mongodbUri = "$mongodbUri&authSource=admin"
-        } else {
-            # URL has no parameters yet, add first parameter
-            $mongodbUri = "$mongodbUri?authSource=admin"
-        }
-    }
-
+    # Simplified MongoDB URI without authentication
     $backendEnvContent = @"
 PORT=$backendPort
-MONGODB_URI=$mongodbUri
+MONGODB_URI=mongodb://localhost:27017/job-tracking
 NODE_ENV=$nodeEnv
 USE_LOCAL_MONGODB=true
-MONGODB_ROOT_USERNAME=admin
-MONGODB_ROOT_PASSWORD=password
 MONGODB_HOST=localhost
 MONGODB_PORT=27017
 MONGODB_DATABASE=job-tracking
-MONGODB_USERNAME=admin
-MONGODB_PASSWORD=password
 "@
 } else {
     $backendEnvContent = @"
