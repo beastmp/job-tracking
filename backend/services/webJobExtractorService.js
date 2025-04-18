@@ -36,16 +36,58 @@ exports.extractJobDataFromWebsite = async (url) => {
       return null;
     }
 
+    // Check if this is UltiPro specifically by URL
+    const isUltiPro = url.includes('ultipro.com') || url.includes('/JobBoard/');
+
     // Parse the HTML
     const $ = cheerio.load(response.data);
     let jobData = {};
 
+    // Special case for UltiPro - look for title directly in page content first
+    if (isUltiPro) {
+      console.log("Detected UltiPro job board, using specialized extraction");
+
+      // Try to find the title using a direct selector first - UltiPro often has this in plaintext
+      const directTitle = $('h1.opportunity-title, h1.job-title, h1:contains("Engineer"), h1').first().text().trim();
+      if (directTitle) {
+        console.log("Found direct title in UltiPro page:", directTitle);
+        jobData.jobTitle = directTitle;
+      }
+
+      // Look for opportunity ID in URL
+      const opportunityIdMatch = url.match(/opportunityId=([0-9a-f-]+)/i);
+      if (opportunityIdMatch && opportunityIdMatch[1]) {
+        jobData.externalJobId = opportunityIdMatch[1];
+      }
+
+      // Try to find company name from URL path
+      const companyMatch = url.match(/\/([^\/]+)\/JobBoard\//);
+      if (companyMatch && companyMatch[1]) {
+        const company = companyMatch[1]
+          .replace(/\d+/g, ' ')  // Replace numbers with spaces
+          .replace(/([A-Z])/g, ' $1') // Add space before capital letters
+          .trim();
+
+        if (company) {
+          jobData.company = company;
+        }
+      }
+    }
+
     // Detect if this is a JavaScript heavy site like UltiPro
-    const isJSHeavySite = detectJSHeavySite($);
+    const isJSHeavySite = isUltiPro || detectJSHeavySite($);
 
     if (isJSHeavySite) {
-      console.log("Detected JavaScript-heavy job site. Using specialized extraction...");
-      jobData = extractFromJSHeavySite($, url);
+      console.log("Using specialized JavaScript-heavy site extraction...");
+      const jsExtractedData = extractFromJSHeavySite($, url);
+
+      // Merge the data, preferring already extracted direct data
+      jobData = { ...jsExtractedData, ...jobData };
+
+      // If we still don't have a job title after JS extraction, try direct HTML
+      if (!jobData.jobTitle) {
+        jobData.jobTitle = extractJobTitle($);
+      }
     } else {
       // Extract job title - try several common patterns
       jobData.jobTitle = extractJobTitle($);
@@ -131,16 +173,25 @@ function extractFromJSHeavySite($, url) {
     // For UltiPro - Find the opportunity object
     if (scriptContent.includes('US.Opportunity.CandidateOpportunityDetail')) {
       try {
-        const matches = scriptContent.match(/CandidateOpportunityDetail\((.*?)\)/s);
+        // Match the entire JSON object between CandidateOpportunityDetail( and )
+        const matches = scriptContent.match(/CandidateOpportunityDetail\((.*?)\);/s);
         if (matches && matches[1]) {
           const jsonStr = matches[1].trim();
-          if (jsonStr.startsWith('{') && jsonStr.endsWith('}')) {
-            jsonData = JSON.parse(jsonStr);
-            return false; // break the each loop
+          if (jsonStr.startsWith('{')) {
+            try {
+              jsonData = JSON.parse(jsonStr);
+              console.log("Found UltiPro job data:", {
+                title: jsonData.Title,
+                id: jsonData.Id
+              });
+              return false; // break the each loop
+            } catch (e) {
+              console.log("Error parsing UltiPro JSON:", e.message);
+            }
           }
         }
       } catch (e) {
-        console.log("Error parsing UltiPro JSON:", e.message);
+        console.log("Error parsing UltiPro JSON structure:", e.message);
       }
     }
 
@@ -167,9 +218,10 @@ function extractFromJSHeavySite($, url) {
   if (jsonData) {
     console.log("Found embedded JSON data for job");
 
-    // UltiPro specific extraction
+    // UltiPro specific extraction - Title should be available
     if (jsonData.Title) {
       jobData.jobTitle = jsonData.Title;
+      console.log("Extracted job title from UltiPro JSON:", jobData.jobTitle);
     }
 
     // Prevent HTML content in job data
@@ -185,31 +237,53 @@ function extractFromJSHeavySite($, url) {
       jobData.description = stripHtml(jsonData.Description);
     }
 
-    // Extract company - usually comes from URL or page title if not in JSON
-    const pageTitle = $('title').text();
+    // Extract company name - try to get from UltiPro data or URL
+    // For UltiPro, we should try to extract company name from the URL
     let company = '';
-
-    // Try to get from URL
     try {
       const urlObj = new URL(url);
       const hostParts = urlObj.hostname.split('.');
-      if (hostParts.length > 1) {
+
+      // Check if the URL contains a tenant ID (common for UltiPro)
+      const pathParts = urlObj.pathname.split('/');
+      for (const part of pathParts) {
+        if (part && part.length > 3 && part.toUpperCase() !== part) {
+          company = part.replace(/([A-Z])/g, ' $1').trim(); // Add space before capital letters
+          if (company) break;
+        }
+      }
+
+      // If we couldn't get from path, try hostname
+      if (!company && hostParts.length > 1) {
         // Skip common domains like com, org, etc.
-        if (hostParts[0] !== 'www' && hostParts[0] !== 'jobs' && hostParts[0] !== 'careers') {
+        if (hostParts[0] !== 'www' && hostParts[0] !== 'jobs' && hostParts[0] !== 'careers' && hostParts[0] !== 'recruiting2') {
           company = hostParts[0].charAt(0).toUpperCase() + hostParts[0].slice(1);
-        } else if (hostParts[1] !== 'com' && hostParts[1] !== 'org') {
+        } else if (hostParts[1] !== 'com' && hostParts[1] !== 'org' && hostParts[1] !== 'ultipro') {
           company = hostParts[1].charAt(0).toUpperCase() + hostParts[1].slice(1);
         }
       }
+
+      // For UltiPro, check page content for company name
+      if (!company || company === 'Ultipro') {
+        // Look for tenant alias in the URL or JavaScript
+        const tenantMatch = url.match(/\/([A-Z0-9]{4,}[A-Z0-9]*)\/JobBoard/) ||
+                           scriptContent.match(/tenantAlias: "([A-Z0-9]{4,}[A-Z0-9]*)"/);
+        if (tenantMatch && tenantMatch[1]) {
+          company = tenantMatch[1].replace(/([A-Z])/g, ' $1').trim();
+        }
+      }
     } catch (e) {
-      // Continue
+      console.log("Error extracting company from URL:", e.message);
     }
 
-    // If we couldn't get from URL, try page title
-    if (!company && pageTitle) {
-      const titleParts = pageTitle.split(/[|\\-]/);
-      if (titleParts.length > 1) {
-        company = titleParts[titleParts.length - 1].trim();
+    // If we still don't have a company, try page title
+    if (!company) {
+      const pageTitle = $('title').text().trim();
+      if (pageTitle) {
+        const titleParts = pageTitle.split(/[|\\-]/);
+        if (titleParts.length > 1) {
+          company = titleParts[titleParts.length - 1].trim();
+        }
       }
     }
 
@@ -222,7 +296,9 @@ function extractFromJSHeavySite($, url) {
       const location = jsonData.Locations[0];
       let locationStr = '';
 
-      if (location.Address) {
+      if (location.LocalizedName) {
+        locationStr = location.LocalizedName;
+      } else if (location.Address) {
         const address = location.Address;
         if (address.City) locationStr += address.City;
 
@@ -235,8 +311,6 @@ function extractFromJSHeavySite($, url) {
           if (locationStr) locationStr += ', ';
           locationStr += address.Country.Name;
         }
-      } else if (location.LocalizedName) {
-        locationStr = location.LocalizedName;
       }
 
       if (locationStr) {
@@ -299,6 +373,19 @@ function extractFromJSHeavySite($, url) {
       jobData.externalJobId = jsonData.Id;
     } else if (jsonData.id) {
       jobData.externalJobId = jsonData.id;
+    }
+
+    // Try direct extraction if certain fields are missing - particularly important for UltiPro
+    if (!jobData.jobTitle) {
+      // For UltiPro, check specific DOM elements
+      const title = $('h1.opportunity-title').text() ||
+                   $('h1.job-title').text() ||
+                   $('h1').first().text();
+
+      if (title && title.length > 0) {
+        jobData.jobTitle = title.trim();
+        console.log("Extracted job title from DOM:", jobData.jobTitle);
+      }
     }
   } else {
     console.log("No embedded JSON data found, trying direct HTML extraction");
