@@ -544,13 +544,26 @@ function Setup-MongoDbDocker {
     Push-Location -Path $rootDir
 
     try {
+        # Get template values from root .env.example if it exists
+        $rootEnvExamplePath = Join-Path -Path $rootDir -ChildPath ".env.example"
+        $templateValues = Get-EnvExampleValues -FilePath $rootEnvExamplePath
+
         # Create .env file with necessary MongoDB configurations - simplified without authentication
         $envContent = @"
 USE_LOCAL_MONGODB=true
 MONGODB_DATABASE=job-tracking
 "@
-        Update-EnvFile -FilePath ".env" -Value $envContent
-        Write-Host "✅ Created or updated .env file with simplified MongoDB configurations" -ForegroundColor Green
+
+        # Add any additional values from the template
+        foreach ($key in $templateValues.Keys) {
+            # Skip MongoDB URI as we're using a local one
+            if ($key -ne "MONGODB_URI" -and $key -ne "USE_LOCAL_MONGODB" -and $key -ne "MONGODB_DATABASE") {
+                $envContent += "`n$key=$($templateValues[$key])"
+            }
+        }
+
+        Update-EnvFile -FilePath ".env" -Content $envContent
+        Write-Host "✅ Created or updated .env file with MongoDB configurations" -ForegroundColor Green
 
         # Create a properly configured network for Windows using nat driver
         Write-Host "🔄 Setting up Docker network for MongoDB..." -ForegroundColor Cyan
@@ -634,6 +647,35 @@ MONGODB_DATABASE=job-tracking
         # Go back to original directory
         Pop-Location
     }
+}
+
+# Function to read values from .env.example files
+function Get-EnvExampleValues {
+    param(
+        [string]$FilePath
+    )
+
+    $values = @{}
+
+    if (Test-Path -Path $FilePath) {
+        Get-Content -Path $FilePath | ForEach-Object {
+            $line = $_.Trim()
+            # Skip comments and empty lines
+            if ($line -and -not $line.StartsWith("#")) {
+                $keyValue = $line -split "=", 2
+                if ($keyValue.Count -eq 2) {
+                    $key = $keyValue[0].Trim()
+                    $value = $keyValue[1].Trim()
+                    $values[$key] = $value
+                }
+            }
+        }
+        Write-Host "✅ Read configuration template from $FilePath" -ForegroundColor Green
+    } else {
+        Write-Host "⚠️ No .env.example file found at $FilePath" -ForegroundColor Yellow
+    }
+
+    return $values
 }
 
 # Display header
@@ -757,26 +799,45 @@ Write-StepHeader "Creating backend configuration"
 $backendPort = Read-InputWithDefault "Enter the port for the backend server" "5000"
 $nodeEnv = Read-InputWithDefault "Enter the NODE_ENV value" "development"
 
-# Create the backend/.env file
-if ($useLocalMongodb) {
-    # Simplified MongoDB URI without authentication
-    $backendEnvContent = @"
+# Read values from backend .env.example file
+$backendEnvExamplePath = Join-Path -Path $backendDir -ChildPath ".env.example"
+$backendTemplateValues = Get-EnvExampleValues -FilePath $backendEnvExamplePath
+
+# Start with a basic set of values
+$backendEnvContent = @"
 PORT=$backendPort
-MONGODB_URI=mongodb://localhost:27017/job-tracking
 NODE_ENV=$nodeEnv
+"@
+
+# Add MongoDB configuration based on the connection type
+if ($useLocalMongodb) {
+    # Simple MongoDB URI for local connection without authentication
+    $backendEnvContent += @"
+
+# MongoDB Configuration
+MONGODB_URI=mongodb://localhost:27017/job-tracking
 USE_LOCAL_MONGODB=true
 MONGODB_HOST=localhost
 MONGODB_PORT=27017
 MONGODB_DATABASE=job-tracking
 "@
 } else {
-    $backendEnvContent = @"
-PORT=$backendPort
+    # Add Atlas URI for cloud connection
+    $backendEnvContent += @"
+
+# MongoDB Configuration
 MONGODB_URI=$mongodbUri
-NODE_ENV=$nodeEnv
 USE_LOCAL_MONGODB=false
 MONGODB_ATLAS_URI=$mongodbUri
 "@
+}
+
+# Add all other values from the template
+foreach ($key in $backendTemplateValues.Keys) {
+    # Skip keys we've already set
+    if ($key -ne "PORT" -ne "NODE_ENV" -ne "MONGODB_URI" -ne "USE_LOCAL_MONGODB" -ne "MONGODB_HOST" -ne "MONGODB_PORT" -ne "MONGODB_DATABASE" -ne "MONGODB_ATLAS_URI") {
+        $backendEnvContent += "`n$key=$($backendTemplateValues[$key])"
+    }
 }
 
 $backendEnvPath = Join-Path -Path $backendDir -ChildPath ".env"
@@ -786,10 +847,22 @@ Update-EnvFile -FilePath $backendEnvPath -Content $backendEnvContent
 Write-StepHeader "Creating frontend configuration"
 $apiUrl = Read-InputWithDefault "Enter the API URL for the frontend to connect to" "http://localhost:$backendPort/api"
 
-# Create the frontend/.env file
+# Read values from frontend .env.example file
+$frontendEnvExamplePath = Join-Path -Path $frontendDir -ChildPath ".env.example"
+$frontendTemplateValues = Get-EnvExampleValues -FilePath $frontendEnvExamplePath
+
+# Start with the API URL which is the most important configuration
 $frontendEnvContent = @"
 REACT_APP_API_URL=$apiUrl
 "@
+
+# Add all other values from the template
+foreach ($key in $frontendTemplateValues.Keys) {
+    # Skip REACT_APP_API_URL as we've already set it
+    if ($key -ne "REACT_APP_API_URL") {
+        $frontendEnvContent += "`n$key=$($frontendTemplateValues[$key])"
+    }
+}
 
 $frontendEnvPath = Join-Path -Path $frontendDir -ChildPath ".env"
 Update-EnvFile -FilePath $frontendEnvPath -Content $frontendEnvContent
