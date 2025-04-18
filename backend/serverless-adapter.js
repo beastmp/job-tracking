@@ -20,7 +20,7 @@ const corsOptions = {
     if (!origin) return callback(null, true);
 
     // Log the origin for debugging purposes
-    console.log('Request origin:', origin);
+    // console.log('Request origin:', origin);
 
     // Once all domains are identified, you can use a whitelist approach:
     const whitelist = [

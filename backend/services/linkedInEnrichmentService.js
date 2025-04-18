@@ -165,27 +165,37 @@ async function updateJobWithEnrichment(jobId, enrichedData) {
       return;
     }
 
-    // Update job with enriched data
+    // CHANGED: Preserve original job title from email, do not update from enrichment
+    console.log(`Preserving original job title: "${job.jobTitle}"`);
+
+    // Update job with selected enriched data only (employment type, description, salary)
+    let updatesApplied = false;
+
     if (enrichedData.description) {
       job.description = enrichedData.description;
+      console.log('Updated job description from LinkedIn data');
+      updatesApplied = true;
     }
 
     if (enrichedData.employmentType) {
       job.employmentType = enrichedData.employmentType;
+      console.log(`Updated employment type to: ${enrichedData.employmentType}`);
+      updatesApplied = true;
     }
 
-    // Update salary information
+    // Update salary information if available
     if (enrichedData.salary) {
       const salaryInfo = linkedInUtils.parseSalaryString(enrichedData.salary);
-
       if (salaryInfo) {
         job.wagesMin = salaryInfo.min;
         job.wagesMax = salaryInfo.max;
         job.wageType = salaryInfo.type;
+        console.log(`Updated salary: ${salaryInfo.min}-${salaryInfo.max} ${salaryInfo.type}`);
+        updatesApplied = true;
       }
     }
 
-    // Add or update recruiter information
+    // Add recruiter information if available
     if (enrichedData.recruiterName) {
       const recruiterNote = `\nRecruiter: ${enrichedData.recruiterName}`;
       const noteAddition = recruiterNote + (enrichedData.recruiterRole ? `, ${enrichedData.recruiterRole}` : '');
@@ -195,20 +205,23 @@ async function updateJobWithEnrichment(jobId, enrichedData) {
         // Don't duplicate recruiter info
         if (!job.notes.includes(enrichedData.recruiterName)) {
           job.notes += noteAddition;
+          updatesApplied = true;
         }
       } else {
         // Add recruiter info to existing notes
         job.notes = (job.notes || '') + noteAddition;
+        updatesApplied = true;
       }
     }
 
-    // Add a note about enrichment if not already present
-    if (!job.notes || !job.notes.includes('Enriched with LinkedIn data')) {
+    // Add a note about enrichment if not already present and if any updates were applied
+    if (updatesApplied && (!job.notes || !job.notes.includes('Enriched with LinkedIn data'))) {
       job.notes = (job.notes || '') + '\nEnriched with LinkedIn data';
     }
 
     // Save the updated job
     await job.save();
+    console.log(`Job ${jobId} updated with selected LinkedIn enrichment data`);
 
   } catch (error) {
     console.error(`Error updating job ${jobId} with enriched data:`, error.message);
@@ -282,8 +295,32 @@ async function enrichJobDataFromLinkedIn(url) {
       const $ = cheerio.load(response.data);
 
       // Extract job details using cheerio selectors
-      const jobTitle = $('.top-card-layout__title').text().trim() ||
-                       $('.topcard__title').text().trim();
+      let jobTitle = $('.top-card-layout__title').text().trim() ||
+                     $('.topcard__title').text().trim();
+
+      // Clean up job title - LinkedIn typically shows "Job Title Company · Location"
+      if (jobTitle) {
+        console.log('Original job title from LinkedIn:', jobTitle);
+
+        // Fix the specific pattern we're seeing:
+        // "Job Title       Company · Location" format with multiple spaces
+        if (jobTitle.includes('       ')) {
+          jobTitle = jobTitle.split('       ')[0].trim();
+        }
+
+        // Remove company name and location patterns
+        jobTitle = jobTitle
+          .replace(/\s*·\s*.+$/i, '')                 // Remove "· Location" part
+          .replace(/\s*\(\s*Remote\s*\)\s*$/i, '')    // Remove "(Remote)" suffix
+          .replace(/\s*-\s*Remote\s*$/i, '')          // Remove "- Remote" suffix
+          .replace(/\s+at .+$/i, '')                  // Remove "at Company" suffix
+          .replace(/\s+in .+$/i, '')                  // Remove "in Location" suffix
+          .replace(/\s*\([^)]*\)$/i, '')              // Remove any trailing parentheses and their contents
+          .replace(/\s{2,}/g, ' ')                    // Replace multiple spaces with a single space
+          .trim();
+
+        console.log('Cleaned job title:', jobTitle);
+      }
 
       const company = $('.topcard__org-name-link').text().trim() ||
                       $('.top-card-layout__entity-info a').text().trim();
@@ -415,18 +452,27 @@ exports.applyEnrichmentToJob = (job, enrichedData) => {
 
   const updatedJob = { ...job };
 
-  // Always update job data with enriched data when available
+  // CHANGED: Preserve original job title from email, do not update
+  console.log(`Preserving original job title: "${job.jobTitle}"`);
+
+  // Only update selected fields with enriched data when available
+  let updatesApplied = false;
+
+  // Update description
   if (enrichedData.description) {
     updatedJob.description = enrichedData.description;
-    console.log(`Updated description`);
+    console.log(`Updated description from LinkedIn data`);
+    updatesApplied = true;
   }
 
+  // Update employment type
   if (enrichedData.employmentType) {
     updatedJob.employmentType = enrichedData.employmentType;
     console.log(`Updated employment type to: ${enrichedData.employmentType}`);
+    updatesApplied = true;
   }
 
-  // Always update salary information when available
+  // Update salary information when available
   if (enrichedData.salary) {
     const salaryInfo = linkedInUtils.parseSalaryString(enrichedData.salary);
     if (salaryInfo) {
@@ -434,10 +480,11 @@ exports.applyEnrichmentToJob = (job, enrichedData) => {
       updatedJob.wagesMin = salaryInfo.min;
       updatedJob.wagesMax = salaryInfo.max;
       updatedJob.wageType = salaryInfo.type;
+      updatesApplied = true;
     }
   }
 
-  // Add or update recruiter information
+  // Add recruiter information if available
   if (enrichedData.recruiterName) {
     const recruiterNote = `\nRecruiter: ${enrichedData.recruiterName}`;
     const noteAddition = recruiterNote + (enrichedData.recruiterRole ? `, ${enrichedData.recruiterRole}` : '');
@@ -447,17 +494,22 @@ exports.applyEnrichmentToJob = (job, enrichedData) => {
       // Don't duplicate recruiter info
       if (!updatedJob.notes.includes(enrichedData.recruiterName)) {
         updatedJob.notes += noteAddition;
+        updatesApplied = true;
       }
     } else {
       // Add recruiter info to existing notes
       updatedJob.notes = (updatedJob.notes || '') + noteAddition;
+      updatesApplied = true;
     }
+  }
 
-    console.log(`Updated recruiter info: ${enrichedData.recruiterName}`);
+  // Add a note about enrichment if updates were applied and the note isn't already present
+  if (updatesApplied && (!updatedJob.notes || !updatedJob.notes.includes('Enriched with LinkedIn data'))) {
+    updatedJob.notes = (updatedJob.notes || '') + '\nEnriched with LinkedIn data';
   }
 
   return updatedJob;
-};
+}
 
 /**
  * Get the number of pending enrichment jobs in the queue
