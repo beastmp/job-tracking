@@ -16,17 +16,5 @@
   ],
   "env": {
     "REACT_APP_API_URL": ""
-  },
-  "github": {
-    "enabled": true,
-    "silent": false,
-    "autoAlias": true
-  },
-  "git": {
-    "deploymentEnabled": {
-      "main": true,
-      "develop": true,
-      "feature/*": true
-    }
   }
 }
