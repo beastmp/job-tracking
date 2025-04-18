@@ -64,6 +64,11 @@ exports.bulkDeleteJobs = async (ids) => {
  */
 exports.reEnrichJobs = async (ids) => {
   const linkedInService = require('./linkedInEnrichmentService');
+  const mongoose = require('mongoose');
+
+  // Ensure DB connection is active for the background process
+  const dbConnection = require('../utils/dbConnection');
+  await dbConnection.connectToDatabase();
 
   // Get jobs by IDs
   const jobs = await Job.find({ _id: { $in: ids } });
@@ -82,17 +87,26 @@ exports.reEnrichJobs = async (ids) => {
     return { queuedCount: 0, enrichedCount: 0, enrichedJobs: [] };
   }
 
-  // Queue each job for enrichment
+  console.log(`Found ${jobsWithLinkedIn.length} jobs with LinkedIn URLs to enrich`);
+
+  // Queue each job for enrichment with full job data
   jobsWithLinkedIn.forEach(job => {
+    // Extract the LinkedIn job ID from the URL if not already present
+    const linkedInJobId = job.externalJobId ||
+                         linkedInService.extractJobIdFromUrl(job.website);
+
+    console.log(`Queuing job ${job._id} (LinkedIn ID: ${linkedInJobId}) for enrichment`);
+
+    // Pass the MongoDB _id directly as part of the job data
     linkedInService.queueJobForEnrichment(job.website, {
-      externalJobId: job.externalJobId || linkedInService.extractJobIdFromUrl(job.website),
-      jobId: job._id // Store the MongoDB ID to identify the job later
+      _id: job._id.toString(),  // Explicitly convert ObjectId to string
+      externalJobId: linkedInJobId
     });
   });
 
   // Start the enrichment process - this will happen asynchronously in the background
   // We don't wait for it to complete here
-  linkedInService.processEnrichmentQueue();
+  await linkedInService.processEnrichmentQueue();
 
   return {
     queuedCount: jobsWithLinkedIn.length,

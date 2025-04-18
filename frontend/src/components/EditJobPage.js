@@ -81,6 +81,7 @@ const EditJobPage = () => {
     }
   };
 
+  // eslint-disable-next-line no-unused-vars
   const addStatusCheck = () => {
     navigate(`/view-job/${id}`);
   };

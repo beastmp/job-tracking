@@ -29,18 +29,30 @@ console.log('LinkedIn rate limit configuration:', {
  * @returns {Promise<void>}
  */
 exports.queueJobForEnrichment = (url, jobData) => {
-  if (!url || !jobData || !jobData.externalJobId) return;
+  if (!url || !jobData) return;
+
+  // Extract job ID from URL if not provided
+  const linkedInJobId = jobData.externalJobId || linkedInUtils.extractJobIdFromUrl(url);
+
+  if (!linkedInJobId) {
+    console.log(`Could not extract LinkedIn job ID from URL: ${url}`);
+    return;
+  }
+
+  console.log(`Queueing job for LinkedIn enrichment: URL=${url}, jobId=${jobData._id || 'new'}, linkedInId=${linkedInJobId}`);
 
   // Add to the queue if we haven't processed this job yet
-  if (!processedJobs[jobData.externalJobId]) {
+  if (!processedJobs[linkedInJobId]) {
     enrichmentQueue.push({
       url: url,
       jobData: jobData
     });
-    processedJobs[jobData.externalJobId] = true;
+    processedJobs[linkedInJobId] = true;
 
     // Automatically start background processing whenever a new job is added
     startBackgroundProcessing();
+  } else {
+    console.log(`Job with LinkedIn ID ${linkedInJobId} is already in the enrichment queue or has been processed`);
   }
 };
 
@@ -58,20 +70,29 @@ function startBackgroundProcessing() {
   isProcessingInBackground = true;
   console.log(`Starting background enrichment processing for ${enrichmentQueue.length} jobs`);
 
-  // Use setImmediate to move processing to the background
-  setImmediate(async () => {
-    try {
-      await processEnrichmentQueueInBackground();
-    } catch (error) {
-      console.error('Background enrichment processing error:', error);
-    } finally {
-      isProcessingInBackground = false;
+  // Make sure MongoDB connection is established and kept alive
+  const dbConnection = require('../utils/dbConnection');
+  dbConnection.connectToDatabase().then(() => {
+    console.log('MongoDB connection ensured for background enrichment processing');
 
-      // If there are still jobs in the queue, schedule another processing round
-      if (enrichmentQueue.length > 0) {
-        setTimeout(startBackgroundProcessing, 1000);
+    // Use setImmediate to move processing to the background
+    setImmediate(async () => {
+      try {
+        await processEnrichmentQueueInBackground();
+      } catch (error) {
+        console.error('Background enrichment processing error:', error);
+      } finally {
+        isProcessingInBackground = false;
+
+        // If there are still jobs in the queue, schedule another processing round
+        if (enrichmentQueue.length > 0) {
+          setTimeout(startBackgroundProcessing, 1000);
+        }
       }
-    }
+    });
+  }).catch(err => {
+    console.error('Failed to establish MongoDB connection for background processing:', err);
+    isProcessingInBackground = false;
   });
 }
 
