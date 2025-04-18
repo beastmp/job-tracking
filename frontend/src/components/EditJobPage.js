@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useLoading } from '../contexts/LoadingContext';
 import JobFormPage from './JobFormPage';
@@ -11,30 +11,45 @@ const EditJobPage = () => {
   const [pageLoading, setPageLoading] = useState(true);
   const { setLoading } = useLoading();
 
-  // Simple effect to fetch job data once
+  // Use ref to track if we've already fetched data
+  const hasFetched = useRef(false);
+  // Use ref to track component mount status
+  const isMounted = useRef(true);
+
+  // Handle component unmounting
   useEffect(() => {
-    let isMounted = true; // Track if component is still mounted
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  // Fetch job data only once
+  useEffect(() => {
+    // Prevent duplicate fetches with ref
+    if (hasFetched.current) {
+      return;
+    }
+
+    console.log('Setting up fetch for job ID:', id);
+    hasFetched.current = true;
 
     const fetchJob = async () => {
-      console.log('Fetching job with ID:', id);
-
       try {
-        // Show global loading indicator
+        console.log('Fetching job data...');
+        if (!isMounted.current) return;
+
         setLoading(true);
-
-        // Make API request
         const response = await api.get(`/jobs/${id}`);
-        console.log('Job data received:', response.data);
+        console.log('Received job data');
 
-        // Only update state if component is still mounted
-        if (isMounted) {
+        if (isMounted.current) {
           setSelectedJob(response.data);
           setPageLoading(false);
           setLoading(false);
         }
       } catch (err) {
         console.error('Error fetching job:', err);
-        if (isMounted) {
+        if (isMounted.current) {
           setError(`Error loading job: ${err.message}`);
           setPageLoading(false);
           setLoading(false);
@@ -43,12 +58,8 @@ const EditJobPage = () => {
     };
 
     fetchJob();
-
-    // Cleanup function
-    return () => {
-      isMounted = false;
-    };
-  }, [id, setLoading]); // Only re-run if ID changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]); // Only depend on id
 
   // Handle job updates
   const handleUpdateJob = async (jobData) => {
