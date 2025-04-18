@@ -165,6 +165,8 @@ async function updateJobWithEnrichment(jobId, enrichedData) {
       return;
     }
 
+    console.log(`Found job ${jobId} in database, applying LinkedIn enrichment...`);
+
     // CHANGED: Preserve original job title from email, do not update from enrichment
     console.log(`Preserving original job title: "${job.jobTitle}"`);
 
@@ -219,12 +221,71 @@ async function updateJobWithEnrichment(jobId, enrichedData) {
       job.notes = (job.notes || '') + '\nEnriched with LinkedIn data';
     }
 
-    // Save the updated job
-    await job.save();
-    console.log(`Job ${jobId} updated with selected LinkedIn enrichment data`);
+    // Check if any updates were actually applied
+    if (!updatesApplied) {
+      console.log(`No LinkedIn data updates were needed for job ${jobId}`);
+      return;
+    }
 
+    // Mark job as modified to ensure mongoose recognizes changes
+    job.markModified('description');
+    job.markModified('employmentType');
+    job.markModified('wagesMin');
+    job.markModified('wagesMax');
+    job.markModified('wageType');
+    job.markModified('notes');
+
+    // Save the updated job using a promise
+    console.log(`Saving LinkedIn enrichment updates to job ${jobId} in database...`);
+    try {
+      const savedJob = await job.save();
+      console.log(`SUCCESS: Job ${jobId} successfully updated with LinkedIn enrichment data. Database save confirmed.`);
+      // Log some of the data that was saved for verification
+      console.log(`Saved data verification: employmentType=${savedJob.employmentType}, wagesMin=${savedJob.wagesMin}, wagesMax=${savedJob.wagesMax}, wageType=${savedJob.wageType}`);
+      return savedJob;
+    } catch (saveError) {
+      console.error(`Database SAVE ERROR for job ${jobId}:`, saveError);
+      throw saveError; // Re-throw to be caught by the outer catch
+    }
   } catch (error) {
-    console.error(`Error updating job ${jobId} with enriched data:`, error.message);
+    console.error(`Error updating job ${jobId} with enriched data:`, error);
+    // Try one more time with a fresh database connection
+    try {
+      console.log(`Attempting one retry with fresh database connection for job ${jobId}...`);
+      const mongoose = require('mongoose');
+      if (mongoose.connection.readyState !== 1) {
+        console.log('MongoDB connection is not ready. Ensuring connection is established...');
+        // Make sure we have a database connection
+        const dbConnection = require('../utils/dbConnection');
+        await dbConnection.ensureConnection();
+      }
+
+      const Job = require('../models/Job');
+      const job = await Job.findById(jobId);
+      if (!job) {
+        console.log(`Retry failed: Job ${jobId} not found in database`);
+        return;
+      }
+
+      // Simplified update with just the essential fields for retry
+      if (enrichedData.description) job.description = enrichedData.description;
+      if (enrichedData.employmentType) job.employmentType = enrichedData.employmentType;
+
+      if (enrichedData.salary) {
+        const salaryInfo = linkedInUtils.parseSalaryString(enrichedData.salary);
+        if (salaryInfo) {
+          job.wagesMin = salaryInfo.min;
+          job.wagesMax = salaryInfo.max;
+          job.wageType = salaryInfo.type;
+        }
+      }
+
+      console.log(`Retry: Saving LinkedIn enrichment for job ${jobId}...`);
+      await job.save();
+      console.log(`RETRY SUCCESS: Job ${jobId} updated with LinkedIn data on second attempt`);
+    } catch (retryError) {
+      console.error(`RETRY FAILED: Could not update job ${jobId} with LinkedIn data after retry:`, retryError);
+    }
   }
 }
 
