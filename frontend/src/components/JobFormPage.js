@@ -50,21 +50,32 @@ const JobFormPage = ({ job, onSubmit, isEditing }) => {
         jobData.applied = new Date(job.applied).toISOString().substr(0, 10);
       }
 
+      if (job.responded) {
+        jobData.responded = new Date(job.responded).toISOString().substr(0, 10);
+      } else {
+        jobData.responded = null; // Ensure null for no response
+      }
+
       // Handle status checks
       if (job.statusChecks && job.statusChecks.length > 0) {
         setStatusChecks(job.statusChecks.map(check => ({
           ...check,
           date: new Date(check.date).toISOString().substr(0, 10)
         })));
+      } else {
+        setStatusChecks([]);
       }
 
       setFormData(jobData);
+      console.log('Job data initialized:', jobData);
     }
   }, [job]);
 
   useEffect(() => {
     initializeFormData();
-  }, [initializeFormData]);
+    // Adding a log to trace if job data is available when component mounts/updates
+    console.log('JobFormPage received job data:', job);
+  }, [initializeFormData, job]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;

@@ -40,7 +40,7 @@ const ViewJobPage = () => {
 
         setLoading(true);
         const response = await api.get(`/jobs/${id}`);
-        console.log('Received job data');
+        console.log('Received job data:', response.data);
 
         if (isMounted.current) {
           setJob(response.data);
