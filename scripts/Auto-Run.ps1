@@ -835,7 +835,11 @@ MONGODB_ATLAS_URI=$mongodbUri
 # Add all other values from the template
 foreach ($key in $backendTemplateValues.Keys) {
     # Skip keys we've already set
-    if ($key -ne "PORT" -ne "NODE_ENV" -ne "MONGODB_URI" -ne "USE_LOCAL_MONGODB" -ne "MONGODB_HOST" -ne "MONGODB_PORT" -ne "MONGODB_DATABASE" -ne "MONGODB_ATLAS_URI") {
+    if ($key -ne "PORT" -and $key -ne "NODE_ENV" -and $key -ne "MONGODB_URI" -and
+        $key -ne "USE_LOCAL_MONGODB" -and $key -ne "MONGODB_HOST" -and
+        $key -ne "MONGODB_PORT" -and $key -ne "MONGODB_DATABASE" -and
+        $key -ne "MONGODB_ATLAS_URI") {
+
         $backendEnvContent += "`n$key=$($backendTemplateValues[$key])"
     }
 }
