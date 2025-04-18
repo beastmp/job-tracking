@@ -3,11 +3,6 @@ import axios from 'axios';
 // Get API URL from environment variable, or use relative path in development
 const API_URL = process.env.REACT_APP_API_URL || '';
 
-// Handle different endpoint structures correctly
-// When running locally with traditional setup, the API_URL already ends with /api
-// This prevents the double /api/api/ prefix problem
-const API_PATH = '';
-
 // Function to create API with interceptors for loading states
 const createApiInstance = (timeout = 120000) => {
   const instance = axios.create({
@@ -123,27 +118,27 @@ export default api;
 
 // Export specialized API instances for specific domains
 export const jobsAPI = {
-  getJobs: () => api.get(`${API_PATH}/jobs`),
-  getJob: (id) => api.get(`${API_PATH}/jobs/${id}`),
-  createJob: (jobData) => api.post(`${API_PATH}/jobs`, jobData),
-  updateJob: (id, jobData) => api.put(`${API_PATH}/jobs/${id}`),
-  deleteJob: (id) => api.delete(`${API_PATH}/jobs/${id}`),
-  bulkDelete: (ids) => api.post(`${API_PATH}/jobs/bulk-delete`, { ids }),
-  reEnrichJobs: (ids) => api.post(`${API_PATH}/jobs/re-enrich`, { ids })
+  getJobs: () => api.get('/jobs'),
+  getJob: (id) => api.get(`/jobs/${id}`),
+  createJob: (jobData) => api.post('/jobs', jobData),
+  updateJob: (id, jobData) => api.put(`/jobs/${id}`, jobData),
+  deleteJob: (id) => api.delete(`/jobs/${id}`),
+  bulkDelete: (ids) => api.post('/jobs/bulk-delete', { ids }),
+  reEnrichJobs: (ids) => api.post('/jobs/re-enrich', { ids })
 };
 
 // Email operations API
 export const emailsAPI = {
   // Sync emails with option to skip global loading indicator
-  syncEmails: (params) => longRunningApi.post(`${API_PATH}/emails/sync`, params,
+  syncEmails: (params) => longRunningApi.post('/emails/sync', params,
     {
       skipGlobalLoading: true,
       timeout: 300000 // Explicitly set timeout to 5 minutes
     }),
-  getFolders: (credentialId) => api.post(`${API_PATH}/emails/get-folders`, { credentialId }),
-  importItems: (data) => api.post(`${API_PATH}/emails/import-all`, data),
-  saveCredentials: (data) => api.post(`${API_PATH}/emails/credentials`, data),
-  getCredentials: () => api.get(`${API_PATH}/emails/credentials`),
-  deleteCredentials: (id) => api.delete(`${API_PATH}/emails/credentials/${id}`),
-  getEnrichmentStatus: () => api.get(`${API_PATH}/emails/enrichment-status`)
+  getFolders: (credentialId) => api.post('/emails/get-folders', { credentialId }),
+  importItems: (data) => api.post('/emails/import-all', data),
+  saveCredentials: (data) => api.post('/emails/credentials', data),
+  getCredentials: () => api.get('/emails/credentials'),
+  deleteCredentials: (id) => api.delete(`/emails/credentials/${id}`),
+  getEnrichmentStatus: () => api.get('/emails/enrichment-status')
 };

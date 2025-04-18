@@ -48,7 +48,8 @@ const Dashboard = ({ jobs, refreshData }) => {
 
   const fetchEmailCredentials = async () => {
     try {
-      const response = await api.get('api/emails/credentials');
+      // Fixed: Add leading slash and remove unnecessary /api prefix
+      const response = await api.get('/emails/credentials');
       if (response.data && response.data.credentials) {
         setEmailCredentials(response.data.credentials);
       }
@@ -59,7 +60,8 @@ const Dashboard = ({ jobs, refreshData }) => {
 
   const fetchApplicationStats = async () => {
     try {
-      const response = await api.get('/api/jobs/stats');
+      // Fixed: Remove unnecessary /api prefix
+      const response = await api.get('/jobs/stats');
       if (response.data) {
         setApplicationStats(response.data);
       }
@@ -74,7 +76,8 @@ const Dashboard = ({ jobs, refreshData }) => {
       setAutoImportResult(null);
 
       const payload = credentialId ? { credentialId } : {};
-      const response = await api.post('/api/emails/auto-import', payload);
+      // Fixed: Remove unnecessary /api prefix
+      const response = await api.post('/emails/auto-import', payload);
 
       setAutoImportResult({
         success: true,
