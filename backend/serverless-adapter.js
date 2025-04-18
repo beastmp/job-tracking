@@ -22,27 +22,48 @@ const corsOptions = {
     // Log the origin for debugging purposes
     console.log('Request origin:', origin);
 
-    // For now, allow all origins while we identify all domains
-    // callback(null, true);
-
     // Once all domains are identified, you can use a whitelist approach:
     const whitelist = [
+      // Production deployments
       'https://job-tracking-michael-palmers-projects-7bed5f67.vercel.app',
       'https://job-tracking-git-main-michael-palmers-projects-7bed5f67.vercel.app',
       'https://job-tracking-sable.vercel.app',
+
+      // Development branch deployments
       'https://job-tracking-dev-michael-palmers-projects-7bed5f67.vercel.app',
       'https://job-tracking-dev-git-main-michael-palmers-projects-7bed5f67.vercel.app',
       'https://job-tracking-dev-sable.vercel.app',
+
+      // Local development
       'http://localhost:3000'
     ];
 
-    if (whitelist.indexOf(origin) !== -1) {
+    // Check exact matches first
+    if (whitelist.includes(origin)) {
       callback(null, true);
-    } else {
-      console.log('CORS blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
+      return;
     }
 
+    // Handle dynamic preview deployments for any branch
+    // Match patterns like: https://job-tracking-xxx-vercel.app, https://job-tracking-dev-xxx-vercel.app
+    const vercelPreviewRegexes = [
+      /^https:\/\/job-tracking-[a-zA-Z0-9-]+-vercel\.app$/,
+      /^https:\/\/job-tracking-dev-[a-zA-Z0-9-]+-vercel\.app$/,
+      /^https:\/\/job-tracking-[a-zA-Z0-9-]+-michael-palmers-projects-7bed5f67\.vercel\.app$/,
+      /^https:\/\/job-tracking-dev-[a-zA-Z0-9-]+-michael-palmers-projects-7bed5f67\.vercel\.app$/
+    ];
+
+    // Check if the origin matches any of our dynamic patterns
+    for (const regex of vercelPreviewRegexes) {
+      if (regex.test(origin)) {
+        callback(null, true);
+        return;
+      }
+    }
+
+    // If we get here, the origin is not allowed
+    console.log('CORS blocked origin:', origin);
+    callback(new Error('Not allowed by CORS'));
   },
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
   credentials: true,
