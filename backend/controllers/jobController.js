@@ -266,7 +266,17 @@ exports.extractFromWebsite = async (req, res) => {
 
         // First update priority fields - these should always be replaced if we have extracted data
         for (const field of priorityFields) {
-          if (sanitizedData[field] && sanitizedData[field].trim() !== '') {
+          // Make sure we check both existence and type before calling trim()
+          if (sanitizedData[field] !== undefined &&
+              sanitizedData[field] !== null &&
+              typeof sanitizedData[field] === 'string' &&
+              sanitizedData[field].trim() !== '') {
+            job[field] = sanitizedData[field];
+          }
+          // Handle non-string priority fields like wagesMin and wagesMax which might be numbers
+          else if (sanitizedData[field] !== undefined &&
+                  sanitizedData[field] !== null &&
+                  typeof sanitizedData[field] !== 'string') {
             job[field] = sanitizedData[field];
           }
         }
@@ -277,7 +287,9 @@ exports.extractFromWebsite = async (req, res) => {
           if (priorityFields.includes(key)) continue;
 
           // Update other fields only if they have a value and exist in the schema
-          if (value && job.schema.paths[key]) {
+          if (value !== undefined &&
+              value !== null &&
+              job.schema.paths[key]) {
             job[key] = value;
           }
         }
