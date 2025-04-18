@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useLoading } from '../contexts/LoadingContext';
 import JobFormPage from './JobFormPage';
@@ -23,56 +23,47 @@ const EditJobPage = () => {
     };
   }, []);
 
+  // Create a stable fetch function with useCallback
+  const fetchJob = useCallback(async () => {
+    if (!isMounted.current || !id || initialFetchDone.current) return;
+
+    console.log('[FETCH] Starting fetch for job ID:', id);
+    initialFetchDone.current = true; // Mark as fetched immediately to prevent duplicate calls
+
+    try {
+      setLoading(true);
+      setLoadingMessage('Loading job details...');
+
+      console.log('[FETCH] Making API request to:', `/jobs/${id}`);
+      const response = await api.get(`/jobs/${id}`);
+      console.log('[FETCH] API response received:', response);
+
+      if (isMounted.current) {
+        console.log('[FETCH] Setting job data:', response.data._id);
+        setSelectedJob(response.data);
+        setError(null);
+
+        // Set loading states to false
+        console.log('[FETCH] Setting loading states to false');
+        setIsLoading(false);
+        setLoading(false);
+      }
+    } catch (err) {
+      if (isMounted.current) {
+        console.error('[FETCH] Error fetching job details:', err);
+        setError('Error fetching job details: ' + (err.response?.data?.message || err.message));
+        setIsLoading(false);
+        setLoading(false);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]); // Only depend on the id
+
   // Fetch job data only once when component mounts
   useEffect(() => {
-    // Skip if we've already fetched or no ID
-    if (initialFetchDone.current || !id) return;
-
-    console.log('Fetching job data for ID:', id);
-
-    const fetchJob = async () => {
-      if (!isMounted.current) return;
-
-      try {
-        setLoading(true);
-        setLoadingMessage('Loading job details...');
-
-        // Adding a debuggable API call
-        console.log('Making API request to:', `/jobs/${id}`);
-        const response = await api.get(`/jobs/${id}`);
-        console.log('API response received:', response);
-
-        if (isMounted.current) {
-          console.log('=== FULL JOB OBJECT ===', response.data);
-          // Set job data first, then update loading states
-          setSelectedJob(response.data);
-          setError(null);
-
-          // Important: Ensure these state updates happen after setting the job data
-          console.log('Setting loading states to false');
-          setIsLoading(false);
-          setLoading(false);
-        }
-      } catch (err) {
-        if (isMounted.current) {
-          console.error('Error fetching job details:', err);
-          console.error('Error response:', err.response);
-          console.error('Error message:', err.message);
-          setError('Error fetching job details: ' + (err.response?.data?.message || err.message));
-          // Make sure to update loading states even on error
-          setIsLoading(false);
-          setLoading(false);
-        }
-      } finally {
-        if (isMounted.current) {
-          initialFetchDone.current = true;
-        }
-      }
-    };
-
     fetchJob();
-
-  }, [id, setLoading, setLoadingMessage]);
+    // No dependencies on context functions, only on the fetchJob callback
+  }, [fetchJob]);
 
   // Update a job
   const handleUpdateJob = async (jobData) => {
@@ -97,8 +88,6 @@ const EditJobPage = () => {
       return false;
     }
   };
-
-  console.log('EditJobPage render state:', { isLoading, selectedJob, error });
 
   if (isLoading) {
     return (
