@@ -1141,25 +1141,127 @@ async function parseLinkedInJobApplication(email) {
     // Use cheerio to parse HTML content
     const $ = cheerio.load(email.html);
 
-    // Extract job title - multiple strategies
+    // Console log for debugging
+    console.log('=== PARSING LINKEDIN JOB APPLICATION ===');
+    console.log('Subject:', email.subject);
+    console.log('Company:', company);
+    console.log('Date:', emailDate);
+
+    // Extract job title - multiple improved strategies
     let jobTitle = '';
 
-    // Strategy 1: Look for job title in links to job postings
-    $('a[href*="/jobs/view/"]').each((i, el) => {
-      const text = $(el).text().trim();
-      if (text && text.length > 3 && !jobTitle) {
-        jobTitle = text;
-      }
-    });
+    // Strategy 0: Try to extract from subject line if it contains the job title
+    // Example: "John, your application was sent to Software Engineer at Company"
+    const subjectJobMatch = email.subject.match(/application was sent to (.+?) at (.+)$/i);
+    if (subjectJobMatch && subjectJobMatch[1]) {
+      jobTitle = subjectJobMatch[1].trim();
+      console.log('Job title from subject:', jobTitle);
+    }
 
-    // Strategy 2: Look for job title in heading elements
+    // Strategy 1: Look for job title in links to job postings
+    if (!jobTitle) {
+      $('a[href*="/jobs/view/"]').each((i, el) => {
+        const text = $(el).text().trim();
+        if (text && text.length > 3 && !jobTitle) {
+          jobTitle = text;
+          console.log('Job title from job links:', jobTitle);
+        }
+      });
+    }
+
+    // Strategy 2: Look for job title in specific LinkedIn elements (common in their emails)
+    if (!jobTitle) {
+      $('.job-title, .job-position, .position-title, .role-title').each((i, el) => {
+        const text = $(el).text().trim();
+        if (text && text.length > 3 && text.length < 100) {
+          jobTitle = text;
+          console.log('Job title from LinkedIn elements:', jobTitle);
+        }
+      });
+    }
+
+    // Strategy 3: Look for job title in heading elements with improved filtering
     if (!jobTitle) {
       $('h1, h2, h3').each((i, el) => {
         const text = $(el).text().trim();
-        if (text && text.length > 5 && text.length < 100 && !jobTitle) {
+        if (text && text.length > 5 && text.length < 100 && !text.includes('LinkedIn') && !text.includes('Application')) {
           jobTitle = text;
+          console.log('Job title from headings:', jobTitle);
         }
       });
+    }
+
+    // Strategy 4: Look for paragraphs that might contain the job title
+    if (!jobTitle) {
+      $('p, div, span').each((i, el) => {
+        const text = $(el).text().trim();
+        // Look for paragraphs containing "position", "role", or "job" keywords
+        if (text && text.length > 5 && text.length < 200 &&
+            (text.includes('position') || text.includes('role') || text.includes('job'))) {
+          // Extract sentence with job information
+          const sentences = text.split(/[.!?]+/);
+          for (const sentence of sentences) {
+            if (sentence.includes('position') || sentence.includes('role') || sentence.includes('job')) {
+              // Clean up the sentence to try to isolate job title
+              const cleanedSentence = sentence.trim()
+                .replace(/applied for/i, '')
+                .replace(/the position of/i, '')
+                .replace(/the role of/i, '')
+                .replace(/position:/i, '')
+                .replace(/role:/i, '')
+                .replace(/job:/i, '')
+                .trim();
+
+              if (cleanedSentence && cleanedSentence.length > 3 && cleanedSentence.length < 100) {
+                jobTitle = cleanedSentence;
+                console.log('Job title from paragraph text:', jobTitle);
+                break;
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Strategy 5: Look for strong or emphasized text that might be job titles
+    if (!jobTitle) {
+      $('strong, b, em').each((i, el) => {
+        const text = $(el).text().trim();
+        // Skip very short texts or known non-title text
+        if (text && text.length > 5 && text.length < 100 &&
+            !text.includes('LinkedIn') && !text.includes('http')) {
+          jobTitle = text;
+          console.log('Job title from emphasized text:', jobTitle);
+          return false; // break the loop
+        }
+      });
+    }
+
+    // Clean up the job title if it exists
+    if (jobTitle) {
+      // Remove company name from job title if present (common in LinkedIn emails)
+      if (jobTitle.includes(company)) {
+        jobTitle = jobTitle.replace(new RegExp(`\\s*${company}.*$`, 'i'), '');
+      }
+
+      // Fix the specific pattern we're seeing:
+      // "Job Title       Company · Location" format
+      if (jobTitle.includes('       ')) {
+        jobTitle = jobTitle.split('       ')[0].trim();
+      }
+
+      // Remove location information patterns
+      jobTitle = jobTitle
+        .replace(/\s*·\s*.+$/i, '')                 // Remove "· Location" part
+        .replace(/\s*\(\s*Remote\s*\)\s*$/i, '')    // Remove "(Remote)" suffix
+        .replace(/\s*-\s*Remote\s*$/i, '')          // Remove "- Remote" suffix
+        .replace(/\s+at .+$/i, '')                  // Remove "at Company" suffix
+        .replace(/\s+in .+$/i, '')                  // Remove "in Location" suffix
+        .replace(/\s*\([^)]*\)$/i, '')              // Remove any trailing parentheses and their contents
+        .replace(/\s{2,}/g, ' ')                    // Replace multiple spaces with a single space
+        .trim();
+
+      console.log('Cleaned job title:', jobTitle);
     }
 
     // Extract location information with better parsing
@@ -1309,6 +1411,10 @@ async function parseLinkedInJobApplication(email) {
       notes: `Applied via LinkedIn on ${emailDate.toLocaleDateString()}`,
       itemType: 'application'
     };
+
+    // Log the final job data
+    console.log('Final job title extracted:', jobData.jobTitle);
+    console.log('Job data:', JSON.stringify(jobData));
 
     // Queue the URL for enrichment if available
     if (website) {
