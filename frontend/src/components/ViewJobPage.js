@@ -1,146 +1,156 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useLoading } from '../contexts/LoadingContext';
+import React, { useEffect, useState } from 'react';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import api from '../utils/api';
+import { useLoading } from '../contexts/LoadingContext';
 
 const ViewJobPage = () => {
   const { id } = useParams();
-  const navigate = useNavigate();
   const [job, setJob] = useState(null);
   const [error, setError] = useState(null);
-  const { setLoading } = useLoading();
+  const { setLoadingMessage } = useLoading();
+  const navigate = useNavigate();
 
-  // Use ref to track if we've already fetched data
-  const hasFetched = useRef(false);
-  // Use ref to track component mount status
-  const isMounted = useRef(true);
-
-  // Handle component unmounting
   useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
-
-  // Fetch job data only once
-  useEffect(() => {
-    // Prevent duplicate fetches with ref
-    if (hasFetched.current) {
-      return;
-    }
-
-    console.log('Setting up fetch for job ID:', id);
-    hasFetched.current = true;
-
     const fetchJob = async () => {
       try {
-        console.log('Fetching job data...');
-        if (!isMounted.current) return;
-
-        setLoading(true);
+        setLoadingMessage('Loading job details...');
         const response = await api.get(`/jobs/${id}`);
-        console.log('Received job data:', response.data);
-
-        if (isMounted.current) {
-          setJob(response.data);
-          setLoading(false);
-        }
+        setJob(response.data);
       } catch (err) {
-        console.error('Error fetching job:', err);
-        if (isMounted.current) {
-          setError(`Error loading job: ${err.message}`);
-          setLoading(false);
-        }
+        setError(`Error loading job: ${err.message}`);
       }
     };
 
     fetchJob();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]); // Only depend on id
+  }, [id, setLoadingMessage]);
 
-  const handleEdit = () => {
-    navigate(`/edit-job/${id}`);
+  const handleDelete = async () => {
+    if (window.confirm('Are you sure you want to delete this job application?')) {
+      try {
+        setLoadingMessage('Deleting job application...');
+        await api.delete(`/jobs/${id}`);
+        navigate('/applications');
+      } catch (err) {
+        setError(`Error deleting job: ${err.message}`);
+      }
+    }
   };
 
-  // Error state
-  if (error) {
-    return <div className="alert alert-danger">{error}</div>;
-  }
-
-  // No job data found
-  if (!job) {
-    return null; // Return nothing while loading
-  }
-
-  // Format date strings
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString();
   };
 
+  if (error) return <div className="alert alert-danger">{error}</div>;
+  if (!job) return <div className="text-center mt-5"><div className="spinner-border" role="status"></div></div>;
+
   return (
-    <div className="job-view">
+    <div className="container mt-4">
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2>View Job Application</h2>
-        <button className="btn btn-primary" onClick={handleEdit}>
-          Edit Job
-        </button>
+        <h1>{job.jobTitle}</h1>
+        <div>
+          <Link to={`/edit-job/${id}`} className="btn btn-primary me-2">Edit</Link>
+          <button onClick={handleDelete} className="btn btn-danger">Delete</button>
+        </div>
       </div>
 
       <div className="card mb-4">
-        <div className="card-header bg-primary text-white">
-          <h3 className="mb-0">{job.jobTitle} at {job.company}</h3>
-        </div>
         <div className="card-body">
           <div className="row">
             <div className="col-md-6">
-              <p><strong>Source:</strong> {job.source || 'N/A'}</p>
-              <p><strong>Search Type:</strong> {job.searchType || 'N/A'}</p>
-              <p><strong>Application Through:</strong> {job.applicationThrough || 'N/A'}</p>
-              <p><strong>Company Location:</strong> {job.companyLocation || 'N/A'}</p>
-              <p><strong>Location Type:</strong> {job.locationType || 'N/A'}</p>
-              <p><strong>Employment Type:</strong> {job.employmentType || 'N/A'}</p>
+              <h4 className="card-title">Company Details</h4>
+              <table className="table table-borderless">
+                <tbody>
+                  <tr>
+                    <th scope="row" style={{width: "40%"}}>Company:</th>
+                    <td>{job.company}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Location:</th>
+                    <td>{job.companyLocation || 'N/A'}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Website:</th>
+                    <td>
+                      {job.website ? (
+                        <a href={job.website} target="_blank" rel="noopener noreferrer">
+                          {job.website}
+                        </a>
+                      ) : 'N/A'}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
             <div className="col-md-6">
-              <p><strong>Wage Range:</strong> {job.wagesMin ? `${job.wagesMin} - ${job.wagesMax || 'N/A'} (${job.wageType || 'N/A'})` : 'Not specified'}</p>
-              <p><strong>Date Applied:</strong> {formatDate(job.applied)}</p>
-              <p><strong>Date Responded:</strong> {job.responded ? formatDate(job.responded) : 'No response yet'}</p>
-              <p><strong>Response Status:</strong> <span className={job.response === 'Rejected' ? 'text-danger' : (job.response === 'Offer' || job.response === 'Hired' ? 'text-success' : '')}>{job.response || 'No Response'}</span></p>
-              <p><strong>External Job ID:</strong> {job.externalJobId || 'N/A'}</p>
-              <p>
-                <strong>Job Website:</strong> {job.website ? (
-                  <a href={job.website} target="_blank" rel="noopener noreferrer">
-                    {job.website}
-                  </a>
-                ) : 'N/A'}
-              </p>
+              <h4 className="card-title">Job Details</h4>
+              <table className="table table-borderless">
+                <tbody>
+                  <tr>
+                    <th scope="row" style={{width: "40%"}}>Date Applied:</th>
+                    <td>{formatDate(job.applied)}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Current Status:</th>
+                    <td>{job.response || 'No Response'}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Last Response:</th>
+                    <td>{formatDate(job.responded)}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Employment Type:</th>
+                    <td>{job.employmentType || 'N/A'}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Location Type:</th>
+                    <td>{job.locationType || 'N/A'}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Salary Range:</th>
+                    <td>
+                      {job.wagesMin || job.wagesMax ?
+                        `$${job.wagesMin ? job.wagesMin : ''}${job.wagesMin && job.wagesMax ? '-' : ''}${job.wagesMax ? job.wagesMax : ''} ${job.wageType || ''}`
+                        : 'N/A'}
+                    </td>
+                  </tr>
+                  <tr>
+                    <th scope="row">External Job ID:</th>
+                    <td>{job.externalJobId || 'N/A'}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
-
-          {job.description && (
-            <div className="mt-4">
-              <h4>Job Description</h4>
-              <div className="p-3 bg-light rounded">
-                <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{job.description}</pre>
-              </div>
-            </div>
-          )}
-
-          {job.notes && (
-            <div className="mt-4">
-              <h4>Notes</h4>
-              <div className="p-3 bg-light rounded">
-                <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{job.notes}</pre>
-              </div>
-            </div>
-          )}
         </div>
       </div>
+
+      {job.description && (
+        <div className="card mb-4">
+          <div className="card-header">
+            <h4 className="mb-0">Job Description</h4>
+          </div>
+          <div className="card-body">
+            <p style={{ whiteSpace: 'pre-wrap' }}>{job.description}</p>
+          </div>
+        </div>
+      )}
+
+      {job.notes && (
+        <div className="card mb-4">
+          <div className="card-header">
+            <h4 className="mb-0">Notes</h4>
+          </div>
+          <div className="card-body">
+            <p style={{ whiteSpace: 'pre-wrap' }}>{job.notes}</p>
+          </div>
+        </div>
+      )}
 
       {job.statusChecks && job.statusChecks.length > 0 && (
         <div className="card mb-4">
           <div className="card-header">
-            <h4 className="mb-0">Status Check History</h4>
+            <h4 className="mb-0">Status History</h4>
           </div>
           <div className="card-body">
             <table className="table">
@@ -162,6 +172,11 @@ const ViewJobPage = () => {
           </div>
         </div>
       )}
+
+      <div className="d-flex justify-content-between mb-4">
+        <Link to="/applications" className="btn btn-secondary">Back to Applications</Link>
+        <Link to={`/edit-job/${id}`} className="btn btn-primary">Edit</Link>
+      </div>
     </div>
   );
 };

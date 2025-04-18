@@ -1,460 +1,283 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { useLoading } from '../contexts/LoadingContext';
 
-// Get default values from environment variables with fallbacks
-const DEFAULT_LOCATION_TYPE = process.env.REACT_APP_DEFAULT_LOCATION_TYPE || 'Remote';
-const DEFAULT_EMPLOYMENT_TYPE = process.env.REACT_APP_DEFAULT_EMPLOYMENT_TYPE || 'Full-time';
-const DEFAULT_WAGE_TYPE = process.env.REACT_APP_DEFAULT_WAGE_TYPE || 'Yearly';
-const DEFAULT_RESPONSE = process.env.REACT_APP_DEFAULT_RESPONSE || 'No Response';
-
-const JobFormPage = ({ job, onSubmit, isEditing }) => {
+const JobFormPage = ({ onSubmit, isEditing }) => {
   const navigate = useNavigate();
+  const { setLoadingMessage } = useLoading();
+  const [error, setError] = useState(null);
+
+  const today = new Date().toISOString().split('T')[0];
+
   const [formData, setFormData] = useState({
-    source: '',
-    searchType: '',
-    applicationThrough: '',
     company: '',
     companyLocation: '',
-    locationType: DEFAULT_LOCATION_TYPE,
-    employmentType: DEFAULT_EMPLOYMENT_TYPE,
     jobTitle: '',
+    website: '',
+    applied: today,
+    response: 'No Response',
+    employmentType: '',
+    locationType: '',
     wagesMin: '',
     wagesMax: '',
-    wageType: DEFAULT_WAGE_TYPE,
-    applied: new Date().toISOString().substr(0, 10),
-    responded: null, // Changed from false to null to prevent default date
-    response: DEFAULT_RESPONSE,
-    website: '',
+    wageType: '',
     description: '',
-    externalJobId: '',
-    notes: ''
+    notes: '',
+    externalJobId: ''
   });
-
-  // For tracking submission state
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // For tracking status checks
-  const [statusCheck, setStatusCheck] = useState({
-    date: new Date().toISOString().substr(0, 10),
-    notes: ''
-  });
-
-  // For handling status checks
-  const [statusChecks, setStatusChecks] = useState([]);
-
-  // Memoize data initialization to prevent unnecessary re-renders
-  const initializeFormData = useCallback(() => {
-    if (job) {
-      const jobData = { ...job };
-      if (job.applied) {
-        jobData.applied = new Date(job.applied).toISOString().substr(0, 10);
-      }
-
-      if (job.responded) {
-        jobData.responded = new Date(job.responded).toISOString().substr(0, 10);
-      } else {
-        jobData.responded = null; // Ensure null for no response
-      }
-
-      // Handle status checks
-      if (job.statusChecks && job.statusChecks.length > 0) {
-        setStatusChecks(job.statusChecks.map(check => ({
-          ...check,
-          date: new Date(check.date).toISOString().substr(0, 10)
-        })));
-      } else {
-        setStatusChecks([]);
-      }
-
-      setFormData(jobData);
-      console.log('Job data initialized:', jobData);
-    }
-  }, [job]);
-
-  useEffect(() => {
-    initializeFormData();
-    // Adding a log to trace if job data is available when component mounts/updates
-    console.log('JobFormPage received job data:', job);
-  }, [initializeFormData, job]);
 
   const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : (name === 'responded' && value === '' ? null : value)
-    }));
-  };
-
-  const handleStatusCheckChange = (e) => {
     const { name, value } = e.target;
-    setStatusCheck(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
-
-  const addStatusCheck = (e) => {
-    e.preventDefault();
-    if (statusCheck.date && statusCheck.notes) {
-      setStatusChecks(prev => [...prev, { ...statusCheck }]);
-      setStatusCheck({
-        date: new Date().toISOString().substr(0, 10),
-        notes: ''
-      });
-    }
-  };
-
-  const removeStatusCheck = (index) => {
-    setStatusChecks(statusChecks.filter((_, i) => i !== index));
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isSubmitting) return; // Prevent double submission
-
-    setIsSubmitting(true);
-
-    // Add status checks to the form data
-    const finalFormData = { ...formData, statusChecks };
-
     try {
-      const success = await onSubmit(finalFormData);
+      setLoadingMessage('Saving new job application...');
+      const success = await onSubmit(formData);
       if (success) {
-        // Use navigate without reload
-        navigate('/');
+        navigate('/applications');
       }
-    } catch (error) {
-      console.error('Error saving job:', error);
-      // Handle error state if needed
-    } finally {
-      setIsSubmitting(false);
+    } catch (err) {
+      setError(`Error saving job: ${err.message}`);
+      window.scrollTo(0, 0);
     }
   };
 
+  // Define the available options for dropdown fields
+  const responseOptions = [
+    'No Response', 'Rejected', 'Phone Screen', 'Interview', 'Offer', 'Hired', 'Other'
+  ];
+
+  const employmentTypeOptions = [
+    'Full-time', 'Part-time', 'Contract', 'Internship', 'Freelance', 'Other'
+  ];
+
+  const locationTypeOptions = [
+    'Remote', 'On-site', 'Hybrid', 'Other'
+  ];
+
+  const wageTypeOptions = [
+    'Hourly', 'Salary', 'Yearly', 'Monthly', 'Weekly', 'Project', 'Other'
+  ];
+
   return (
-    <div className="job-form">
-      <h2>{isEditing ? 'Edit Job Application' : 'Add New Job Application'}</h2>
+    <div className="container mt-4">
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <h1>Add New Job Application</h1>
+        <Link to="/applications" className="btn btn-outline-secondary">Cancel</Link>
+      </div>
+
+      {error && <div className="alert alert-danger">{error}</div>}
+
       <form onSubmit={handleSubmit}>
-        <div className="row">
-          <div className="col-md-6 mb-3">
-            <label className="form-label">Job Title*</label>
-            <input
-              type="text"
-              name="jobTitle"
-              className="form-control"
-              value={formData.jobTitle || ''}
-              onChange={handleChange}
-              required
-            />
+        <div className="card mb-4">
+          <div className="card-header">
+            <h4 className="mb-0">Company Information</h4>
           </div>
-          <div className="col-md-6 mb-3">
-            <label className="form-label">Company*</label>
-            <input
-              type="text"
-              name="company"
-              className="form-control"
-              value={formData.company || ''}
-              onChange={handleChange}
-              required
-            />
+          <div className="card-body">
+            <div className="row">
+              <div className="col-md-6 mb-3">
+                <label htmlFor="company" className="form-label">Company Name *</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  id="company"
+                  name="company"
+                  value={formData.company}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+              <div className="col-md-6 mb-3">
+                <label htmlFor="companyLocation" className="form-label">Company Location</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  id="companyLocation"
+                  name="companyLocation"
+                  value={formData.companyLocation}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="col-md-12 mb-3">
+                <label htmlFor="website" className="form-label">Website URL</label>
+                <input
+                  type="url"
+                  className="form-control"
+                  id="website"
+                  name="website"
+                  value={formData.website}
+                  onChange={handleChange}
+                  placeholder="https://example.com"
+                />
+              </div>
+            </div>
           </div>
-        </div>
-
-        {/* Rest of the form remains unchanged */}
-        <div className="row">
-          <div className="col-md-6 mb-3">
-            <label className="form-label">Source</label>
-            <input
-              type="text"
-              name="source"
-              className="form-control"
-              placeholder="LinkedIn, Indeed, Referral, etc."
-              value={formData.source || ''}
-              onChange={handleChange}
-            />
-          </div>
-          <div className="col-md-6 mb-3">
-            <label className="form-label">Search Type</label>
-            <input
-              type="text"
-              name="searchType"
-              className="form-control"
-              placeholder="Direct, Recruiter, etc."
-              value={formData.searchType || ''}
-              onChange={handleChange}
-            />
-          </div>
-        </div>
-
-        <div className="row">
-          <div className="col-md-6 mb-3">
-            <label className="form-label">Application Through</label>
-            <input
-              type="text"
-              name="applicationThrough"
-              className="form-control"
-              placeholder="Company website, LinkedIn Easy Apply, etc."
-              value={formData.applicationThrough || ''}
-              onChange={handleChange}
-            />
-          </div>
-          <div className="col-md-6 mb-3">
-            <label className="form-label">Company Location</label>
-            <input
-              type="text"
-              name="companyLocation"
-              className="form-control"
-              placeholder="City, State, Country"
-              value={formData.companyLocation || ''}
-              onChange={handleChange}
-            />
-          </div>
-        </div>
-
-        <div className="row">
-          <div className="col-md-6 mb-3">
-            <label className="form-label">Location Type</label>
-            <select
-              name="locationType"
-              className="form-select"
-              value={formData.locationType || 'Remote'}
-              onChange={handleChange}
-            >
-              <option value="Remote">Remote</option>
-              <option value="On-site">On-site</option>
-              <option value="Hybrid">Hybrid</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-          <div className="col-md-6 mb-3">
-            <label className="form-label">Employment Type</label>
-            <select
-              name="employmentType"
-              className="form-select"
-              value={formData.employmentType || 'Full-time'}
-              onChange={handleChange}
-            >
-              <option value="Full-time">Full-time</option>
-              <option value="Part-time">Part-time</option>
-              <option value="Contract">Contract</option>
-              <option value="Internship">Internship</option>
-              <option value="Freelance">Freelance</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="row">
-          <div className="col-md-4 mb-3">
-            <label className="form-label">Minimum Wage</label>
-            <input
-              type="number"
-              name="wagesMin"
-              className="form-control"
-              value={formData.wagesMin || ''}
-              onChange={handleChange}
-            />
-          </div>
-          <div className="col-md-4 mb-3">
-            <label className="form-label">Maximum Wage</label>
-            <input
-              type="number"
-              name="wagesMax"
-              className="form-control"
-              value={formData.wagesMax || ''}
-              onChange={handleChange}
-            />
-          </div>
-          <div className="col-md-4 mb-3">
-            <label className="form-label">Wage Type</label>
-            <select
-              name="wageType"
-              className="form-select"
-              value={formData.wageType || 'Yearly'}
-              onChange={handleChange}
-            >
-              <option value="Hourly">Hourly</option>
-              <option value="Yearly">Yearly</option>
-              <option value="Monthly">Monthly</option>
-              <option value="Weekly">Weekly</option>
-              <option value="Project">Project</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="row">
-          <div className="col-md-6 mb-3">
-            <label className="form-label">Date Applied</label>
-            <input
-              type="date"
-              name="applied"
-              className="form-control"
-              value={formData.applied || ''}
-              onChange={handleChange}
-            />
-          </div>
-          <div className="col-md-6 mb-3">
-            <label className="form-label">External Job ID</label>
-            <input
-              type="text"
-              name="externalJobId"
-              className="form-control"
-              placeholder="Job ID from external source"
-              value={formData.externalJobId || ''}
-              onChange={handleChange}
-            />
-            <div className="form-text">ID from external job source (e.g., LinkedIn)</div>
-          </div>
-        </div>
-
-        <div className="row">
-          <div className="col-md-6 mb-3">
-            <label className="form-label">Job Website/URL</label>
-            <input
-              type="url"
-              name="website"
-              className="form-control"
-              placeholder="https://example.com/job-posting"
-              value={formData.website || ''}
-              onChange={handleChange}
-            />
-          </div>
-          <div className="col-md-6 mb-3">
-            <label className="form-label">Date Responded</label>
-            <input
-              type="date"
-              name="responded"
-              className="form-control"
-              value={formData.responded ? new Date(formData.responded).toISOString().substr(0, 10) : ''}
-              onChange={handleChange}
-            />
-            <div className="form-text">Leave empty if no response received yet</div>
-          </div>
-        </div>
-
-        <div className="row">
-          <div className="col-md-6 mb-3">
-            <label className="form-label">Response Status</label>
-            <select
-              name="response"
-              className="form-select"
-              value={formData.response || 'No Response'}
-              onChange={handleChange}
-            >
-              <option value="No Response">No Response</option>
-              <option value="Rejected">Rejected</option>
-              <option value="Phone Screen">Phone Screen</option>
-              <option value="Interview">Interview</option>
-              <option value="Offer">Offer</option>
-              <option value="Hired">Hired</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="mb-3">
-          <label className="form-label">Job Description</label>
-          <textarea
-            name="description"
-            className="form-control"
-            value={formData.description || ''}
-            onChange={handleChange}
-            rows="3"
-          ></textarea>
-        </div>
-
-        <div className="mb-3">
-          <label className="form-label">Notes</label>
-          <textarea
-            name="notes"
-            className="form-control"
-            value={formData.notes || ''}
-            onChange={handleChange}
-            rows="3"
-          ></textarea>
         </div>
 
         <div className="card mb-4">
           <div className="card-header">
-            Status Check History
+            <h4 className="mb-0">Job Details</h4>
           </div>
           <div className="card-body">
-            <div className="mb-3">
-              <div className="row">
-                <div className="col-md-4">
-                  <label className="form-label">Date</label>
-                  <input
-                    type="date"
-                    name="date"
-                    className="form-control"
-                    value={statusCheck.date}
-                    onChange={handleStatusCheckChange}
-                  />
-                </div>
-                <div className="col-md-6">
-                  <label className="form-label">Notes</label>
-                  <input
-                    type="text"
-                    name="notes"
-                    className="form-control"
-                    value={statusCheck.notes}
-                    onChange={handleStatusCheckChange}
-                    placeholder="E.g., Sent follow-up email"
-                  />
-                </div>
-                <div className="col-md-2 d-flex align-items-end">
-                  <button
-                    type="button"
-                    className="btn btn-secondary w-100"
-                    onClick={addStatusCheck}
-                  >
-                    Add
-                  </button>
-                </div>
+            <div className="row">
+              <div className="col-md-6 mb-3">
+                <label htmlFor="jobTitle" className="form-label">Job Title *</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  id="jobTitle"
+                  name="jobTitle"
+                  value={formData.jobTitle}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+              <div className="col-md-6 mb-3">
+                <label htmlFor="applied" className="form-label">Date Applied</label>
+                <input
+                  type="date"
+                  className="form-control"
+                  id="applied"
+                  name="applied"
+                  value={formData.applied}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="col-md-6 mb-3">
+                <label htmlFor="employmentType" className="form-label">Employment Type</label>
+                <select
+                  className="form-select"
+                  id="employmentType"
+                  name="employmentType"
+                  value={formData.employmentType}
+                  onChange={handleChange}
+                >
+                  <option value="">Select employment type</option>
+                  {employmentTypeOptions.map(option => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-md-6 mb-3">
+                <label htmlFor="locationType" className="form-label">Location Type</label>
+                <select
+                  className="form-select"
+                  id="locationType"
+                  name="locationType"
+                  value={formData.locationType}
+                  onChange={handleChange}
+                >
+                  <option value="">Select location type</option>
+                  {locationTypeOptions.map(option => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-md-3 mb-3">
+                <label htmlFor="wagesMin" className="form-label">Minimum Salary</label>
+                <input
+                  type="number"
+                  className="form-control"
+                  id="wagesMin"
+                  name="wagesMin"
+                  value={formData.wagesMin}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="col-md-3 mb-3">
+                <label htmlFor="wagesMax" className="form-label">Maximum Salary</label>
+                <input
+                  type="number"
+                  className="form-control"
+                  id="wagesMax"
+                  name="wagesMax"
+                  value={formData.wagesMax}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="col-md-6 mb-3">
+                <label htmlFor="wageType" className="form-label">Wage Type</label>
+                <select
+                  className="form-select"
+                  id="wageType"
+                  name="wageType"
+                  value={formData.wageType}
+                  onChange={handleChange}
+                >
+                  <option value="">Select wage type</option>
+                  {wageTypeOptions.map(option => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-md-6 mb-3">
+                <label htmlFor="externalJobId" className="form-label">External Job ID</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  id="externalJobId"
+                  name="externalJobId"
+                  value={formData.externalJobId}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="col-md-6 mb-3">
+                <label htmlFor="response" className="form-label">Current Status</label>
+                <select
+                  className="form-select"
+                  id="response"
+                  name="response"
+                  value={formData.response}
+                  onChange={handleChange}
+                >
+                  {responseOptions.map(option => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
               </div>
             </div>
-
-            {statusChecks.length > 0 && (
-              <table className="table table-sm">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Notes</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {statusChecks.map((check, index) => (
-                    <tr key={index}>
-                      <td>{new Date(check.date).toLocaleDateString()}</td>
-                      <td>{check.notes}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-danger"
-                          onClick={() => removeStatusCheck(index)}
-                        >
-                          Remove
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
           </div>
         </div>
 
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={isSubmitting}
-        >
-          {isSubmitting
-            ? (isEditing ? 'Updating...' : 'Adding...')
-            : (isEditing ? 'Update Job' : 'Add Job')}
-        </button>
+        <div className="card mb-4">
+          <div className="card-header">
+            <h4 className="mb-0">Additional Information</h4>
+          </div>
+          <div className="card-body">
+            <div className="mb-3">
+              <label htmlFor="description" className="form-label">Job Description</label>
+              <textarea
+                className="form-control"
+                id="description"
+                name="description"
+                rows="6"
+                value={formData.description}
+                onChange={handleChange}
+                placeholder="Paste the job description here"
+              ></textarea>
+            </div>
+            <div className="mb-3">
+              <label htmlFor="notes" className="form-label">Personal Notes</label>
+              <textarea
+                className="form-control"
+                id="notes"
+                name="notes"
+                rows="4"
+                value={formData.notes}
+                onChange={handleChange}
+                placeholder="Add any personal notes about your application, contacts, or follow-up plans"
+              ></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div className="d-flex justify-content-between mb-4">
+          <Link to="/applications" className="btn btn-secondary">Cancel</Link>
+          <button type="submit" className="btn btn-primary">Save Application</button>
+        </div>
       </form>
     </div>
   );
