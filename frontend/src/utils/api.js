@@ -3,12 +3,10 @@ import axios from 'axios';
 // Get API URL from environment variable, or use relative path in development
 const API_URL = process.env.REACT_APP_API_URL || '';
 
-// Properly handle API path without creating duplicate prefixes
-// If API_URL already contains '/api', don't add another one
-// This handles both cases:
-// 1. When nginx routes /api/ to the backend root
-// 2. When the backend serves API at /api endpoint
-const API_PATH = API_URL.includes('/api') ? '' : '/api';
+// Handle different endpoint structures correctly
+// When running locally with traditional setup, the API_URL already ends with /api
+// This prevents the double /api/api/ prefix problem
+const API_PATH = '';
 
 // Function to create API with interceptors for loading states
 const createApiInstance = (timeout = 120000) => {
