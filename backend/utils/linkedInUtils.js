@@ -44,6 +44,32 @@ exports.extractJobIdFromUrl = (url) => {
 };
 
 /**
+ * Clean and standardize LinkedIn job URL to remove tracking parameters
+ * @param {string} url LinkedIn job URL
+ * @returns {string|null} Cleaned URL or null if invalid
+ */
+exports.cleanLinkedInJobUrl = (url) => {
+  if (!url) return null;
+
+  try {
+    // Extract the job ID
+    const jobId = exports.extractJobIdFromUrl(url);
+    if (!jobId) {
+      console.log(`Could not extract job ID from URL: ${url}`);
+      return url; // Return original if we can't extract job ID
+    }
+
+    // Create a clean, standardized URL with just the job ID
+    const cleanUrl = `https://www.linkedin.com/jobs/view/${jobId}/`;
+    console.log(`Cleaned LinkedIn URL from: ${url.substring(0, 50)}... to: ${cleanUrl}`);
+    return cleanUrl;
+  } catch (error) {
+    console.error(`Error cleaning LinkedIn URL: ${error.message}`);
+    return url; // Return original on error
+  }
+};
+
+/**
  * Parse salary string to extract min, max, and type
  * @param {string} salaryText Raw salary text
  * @returns {Object|null} Parsed salary information

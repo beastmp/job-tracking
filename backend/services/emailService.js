@@ -1344,6 +1344,15 @@ async function parseLinkedInJobApplication(email) {
       }
     });
 
+    // Clean up the LinkedIn URL to remove tracking parameters
+    if (website) {
+      // Log the original URL first (truncated for readability)
+      console.log('Original LinkedIn URL:', website.length > 50 ? website.substring(0, 50) + '...' : website);
+
+      // Clean the URL using the new utility function
+      website = linkedInUtils.cleanLinkedInJobUrl(website);
+    }
+
     // Extract job ID from URL
     let externalJobId = '';
     if (website) {
@@ -1414,6 +1423,7 @@ async function parseLinkedInJobApplication(email) {
 
     // Log the final job data
     console.log('Final job title extracted:', jobData.jobTitle);
+    console.log('Final website URL:', jobData.website);
     console.log('Job data:', JSON.stringify(jobData));
 
     // Queue the URL for enrichment if available
