@@ -340,6 +340,15 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
       setEmailResults(null);
       setProgress(5);
       setProgressMessage('Initializing sync operation...');
+      // Reset processing details when starting a new sync
+      setProcessingDetails({
+        emailsTotal: 0,
+        emailsProcessed: 0,
+        foldersTotal: 0,
+        foldersProcessed: 0,
+        enrichmentTotal: 0,
+        enrichmentProcessed: 0
+      });
 
       // Start progress simulation
       const progressInterval = simulateProgress('sync');
@@ -353,7 +362,32 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
       // Use the emailsAPI with longer timeout for this operation
       const response = await emailsAPI.syncEmails({
         credentialId,
-        ignorePreviousImport
+        ignorePreviousImport,
+        // Add a progress callback to update processing details
+        onProgress: (progressData) => {
+          if (progressData) {
+            setProcessingDetails(prevDetails => ({
+              ...prevDetails,
+              emailsTotal: progressData.emailsTotal || prevDetails.emailsTotal,
+              emailsProcessed: progressData.emailsProcessed || prevDetails.emailsProcessed,
+              foldersTotal: progressData.foldersTotal || prevDetails.foldersTotal,
+              foldersProcessed: progressData.foldersProcessed || prevDetails.foldersProcessed,
+              enrichmentTotal: progressData.enrichmentTotal || prevDetails.enrichmentTotal,
+              enrichmentProcessed: progressData.enrichmentProcessed || prevDetails.enrichmentProcessed
+            }));
+
+            // Update progress percentage based on folder and email processing
+            if (progressData.foldersTotal > 0) {
+              const folderProgress = Math.round((progressData.foldersProcessed / progressData.foldersTotal) * 50);
+              setProgress(Math.min(5 + folderProgress, 55));
+            }
+
+            if (progressData.emailsTotal > 0) {
+              const emailProgress = Math.round((progressData.emailsProcessed / progressData.emailsTotal) * 40);
+              setProgress(Math.min(55 + emailProgress, 95));
+            }
+          }
+        }
       });
 
       // Clear the interval
@@ -362,6 +396,22 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
       // Show completion
       setProgress(100);
       setProgressMessage('Sync complete!');
+
+      // Combine all items for processing in the UI
+      const allItems = [
+        ...(response.data.applications || []).map(app => ({ ...app, type: 'application' })),
+        ...(response.data.statusUpdates || []).map(update => ({ ...update, type: 'statusUpdate' })),
+        ...(response.data.responses || []).map(resp => ({ ...resp, type: 'response' }))
+      ];
+
+      // Update the items to process state
+      setItemsToProcess(allItems);
+
+      // Auto-select new items for potential import
+      const newItemIds = allItems
+        .filter(item => !item.exists)
+        .map(item => item.id || item._id);
+      setSelectedItems(newItemIds);
 
       setEmailResults({
         success: true,

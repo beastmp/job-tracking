@@ -56,7 +56,7 @@ function AppMain() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const { setLoading: setContextLoading, setLoadingMessage } = useLoading();
+  const { setLoadingMessage } = useLoading();
 
   // Define fetchJobs with useCallback to ensure stable reference between renders
   const fetchJobs = useCallback(async () => {

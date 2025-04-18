@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useLoading } from '../contexts/LoadingContext';
 import JobFormPage from './JobFormPage';
@@ -9,24 +9,24 @@ const EditJobPage = () => {
   const [selectedJob, setSelectedJob] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const { setLoading: setContextLoading, setLoadingMessage } = useLoading();
+  const { setLoading, setLoadingMessage } = useLoading();
 
-  // Fetch a single job for editing
-  const fetchJob = async (jobId) => {
+  // Fetch a single job for editing - memoized with useCallback
+  const fetchJob = useCallback(async (jobId) => {
     try {
-      setContextLoading(true, 'Loading job details...');
+      setLoading(true, 'Loading job details...');
       const response = await api.get(`/jobs/${jobId}`);
       setSelectedJob(response.data);
-      setContextLoading(false);
+      setLoading(false);
       return response.data;
     } catch (err) {
       setError('Error fetching job details: ' + err.message);
-      setContextLoading(false);
+      setLoading(false);
       return null;
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [setLoading, setError]);
 
   // Update a job
   const handleUpdateJob = async (jobData) => {
@@ -44,7 +44,7 @@ const EditJobPage = () => {
     if (id) {
       fetchJob(id);
     }
-  }, [id]);
+  }, [id, fetchJob]);
 
   if (isLoading) {
     return (

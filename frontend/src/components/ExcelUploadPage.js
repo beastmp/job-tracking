@@ -49,7 +49,7 @@ const ExcelUploadPage = ({ onImportJobs }) => {
     setTemplateUrl(url);
 
     return url;
-  }, []); // Don't include templateUrl in the dependency array
+  }, [templateUrl]); // Include templateUrl as a dependency
 
   useEffect(() => {
     // Generate the template on component mount only if it doesn't exist
@@ -61,6 +61,7 @@ const ExcelUploadPage = ({ onImportJobs }) => {
         URL.revokeObjectURL(templateUrl);
       }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [generateExcelTemplate]); // Only depend on the generateExcelTemplate function
 
   const handleFileChange = (e) => {
