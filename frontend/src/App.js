@@ -565,7 +565,7 @@ const ExcelUpload = ({ onImportJobs }) => {
       progressInterval = simulateProgress();
 
       // Update the API endpoint to match the controller
-      const response = await api.post('/api/upload/import-excel', formData, {
+      const response = await api.post('/upload/import-excel', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         },
@@ -803,7 +803,8 @@ function AppMain() {
       setLoading(true);
       // Show loading for short operations but with a minimal message
       setLoadingMessage('Loading job data...');
-      const response = await api.get('/api/jobs');
+      // Fixed: Remove redundant /api/ prefix
+      const response = await api.get('/jobs');
       setJobs(response.data);
       setLoading(false);
     } catch (err) {
@@ -826,7 +827,8 @@ function AppMain() {
   const handleAddJob = async (jobData) => {
     try {
       setLoadingMessage('Saving new job application...');
-      await api.post('/api/jobs', jobData);
+      // Fixed: Remove redundant /api/ prefix
+      await api.post('/jobs', jobData);
       refreshData(); // Refresh instead of redirecting
       return true;
     } catch (err) {
@@ -839,7 +841,8 @@ function AppMain() {
   const handleUpdateJob = async (jobData) => {
     try {
       setLoadingMessage('Updating job application...');
-      await api.put(`/api/jobs/${jobData._id}`, jobData);
+      // Fixed: Remove redundant /api/ prefix
+      await api.put(`/jobs/${jobData._id}`, jobData);
       refreshData(); // Refresh instead of redirecting
       return true;
     } catch (err) {
@@ -853,7 +856,8 @@ function AppMain() {
     if (window.confirm('Are you sure you want to delete this job application?')) {
       try {
         setLoadingMessage('Deleting job application...');
-        await api.delete(`/api/jobs/${jobId}`);
+        // Fixed: Remove redundant /api/ prefix
+        await api.delete(`/jobs/${jobId}`);
         refreshData();
         return true;
       } catch (err) {
@@ -868,7 +872,8 @@ function AppMain() {
   const handleBulkDeleteJobs = async (jobIds) => {
     try {
       setLoadingMessage(`Deleting ${jobIds.length} job applications...`);
-      const response = await api.post('/api/jobs/bulk-delete', { ids: jobIds });
+      // Fixed: Remove redundant /api/ prefix
+      const response = await api.post('/jobs/bulk-delete', { ids: jobIds });
       refreshData();
       // Show success message
       alert(`Successfully deleted ${response.data.deletedCount} job applications`);
@@ -883,7 +888,8 @@ function AppMain() {
   const handleUpdateStatus = async (jobId, newStatus) => {
     try {
       setLoadingMessage('Updating job status...');
-      await api.put(`/api/jobs/${jobId}`, { response: newStatus });
+      // Fixed: Remove redundant /api/ prefix
+      await api.put(`/jobs/${jobId}`, { response: newStatus });
       refreshData();
       return true;
     } catch (err) {
@@ -896,7 +902,8 @@ function AppMain() {
   const fetchJob = async (jobId) => {
     try {
       setContextLoading(true, 'Loading job details...'); // Use context loading instead of local state
-      const response = await api.get(`/api/jobs/${jobId}`);
+      // Fixed: Remove redundant /api/ prefix
+      const response = await api.get(`/jobs/${jobId}`);
       setSelectedJob(response.data);
       // Clear loading state after job data is fetched
       setContextLoading(false); // Turn off global loading spinner
@@ -999,15 +1006,7 @@ function AppMain() {
                 refreshData={refreshData} // Pass down both for backward compatibility
               />
             } />
-
-            {/* Add a catch-all route for 404 errors */}
-            <Route path="*" element={
-              <div className="text-center mt-5">
-                <h2>Page Not Found</h2>
-                <p>The page you are looking for doesn't exist or has been moved.</p>
                 <Link to="/" className="btn btn-primary mt-3">Go to Dashboard</Link>
-              </div>
-            } />
           </Routes>
         </div>
       </div>

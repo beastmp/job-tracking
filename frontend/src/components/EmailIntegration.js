@@ -92,7 +92,7 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
     try {
       setFetchLoading(true);
       // Fix the API endpoint path
-      const response = await api.get(`/api/emails/credentials`);
+      const response = await api.get(`/emails/credentials`);
       setCredentials(response.data.credentials || []);
     } catch (error) {
       console.error('Error fetching credentials:', error);
@@ -144,8 +144,7 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
   const deleteCredential = async (id) => {
     if (window.confirm('Are you sure you want to delete these credentials?')) {
       try {
-        // Fix the API endpoint path
-        await api.delete(`/api/emails/credentials/${id}`);
+        await api.delete(`/emails/credentials/${id}`);
         setToastMessage({
           type: 'success',
           text: 'Credentials deleted successfully'
@@ -182,7 +181,7 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
       setSuccessMessage('');
 
       // Fix the API endpoint path
-      await api.post(`/api/emails/credentials`, formData);
+      await api.post(`/emails/credentials`, formData);
 
       setToastMessage({
         type: 'success',
@@ -273,7 +272,7 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
       });
 
       // Fix the API endpoint path
-      const response = await api.post(`/api/emails/import-all`, {
+      const response = await api.post(`/emails/import-all`, {
         applications,
         statusUpdates,
         responses
@@ -420,7 +419,7 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
       setError('');
 
       // Fix the API endpoint path
-      const response = await api.post('/api/emails/get-folders', { credentialId });
+      const response = await api.post('/emails/get-folders', { credentialId });
 
       if (response.data.folders && response.data.folders.length > 0) {
         setAvailableFolders(response.data.folders);
