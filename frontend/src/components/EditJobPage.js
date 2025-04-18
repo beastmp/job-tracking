@@ -28,14 +28,14 @@ const EditJobPage = () => {
     // Skip if we've already fetched or no ID
     if (initialFetchDone.current || !id) return;
 
+    console.log('Fetching job data for ID:', id);
+
     const fetchJob = async () => {
       if (!isMounted.current) return;
 
-      console.log('Fetching job data for ID:', id);
       try {
         setLoading(true);
         setLoadingMessage('Loading job details...');
-        setIsLoading(true);
 
         // Adding a debuggable API call
         console.log('Making API request to:', `/jobs/${id}`);
@@ -44,23 +44,27 @@ const EditJobPage = () => {
 
         if (isMounted.current) {
           console.log('=== FULL JOB OBJECT ===', response.data);
+          // Set job data first, then update loading states
           setSelectedJob(response.data);
           setError(null);
+
+          // Important: Ensure these state updates happen after setting the job data
+          console.log('Setting loading states to false');
+          setIsLoading(false);
+          setLoading(false);
         }
       } catch (err) {
         if (isMounted.current) {
           console.error('Error fetching job details:', err);
-          // Log more details about the error
           console.error('Error response:', err.response);
           console.error('Error message:', err.message);
           setError('Error fetching job details: ' + (err.response?.data?.message || err.message));
+          // Make sure to update loading states even on error
+          setIsLoading(false);
+          setLoading(false);
         }
       } finally {
         if (isMounted.current) {
-          // Ensure both loading states are reset
-          console.log('Resetting loading states');
-          setLoading(false);
-          setIsLoading(false);
           initialFetchDone.current = true;
         }
       }
@@ -68,14 +72,13 @@ const EditJobPage = () => {
 
     fetchJob();
 
-  }, [id, setLoading, setLoadingMessage]); // Added setLoadingMessage to dependencies
+  }, [id, setLoading, setLoadingMessage]);
 
   // Update a job
   const handleUpdateJob = async (jobData) => {
     if (!isMounted.current) return false;
 
     try {
-      // Also log the job data being sent for update
       console.log('=== UPDATING JOB OBJECT ===', jobData);
       setLoadingMessage('Updating job application...');
       setLoading(true);
