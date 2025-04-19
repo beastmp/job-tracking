@@ -1,7 +1,8 @@
+// eslint-disable-next-line no-unused-vars
 import React, { useState, useEffect, useContext } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../utils/api';
-import { LoadingContext } from '../contexts/LoadingContext';
+import { useLoading } from '../contexts/LoadingContext';
 
 // Default search configuration
 const DEFAULT_SEARCH_TIMEFRAME_DAYS = parseInt(process.env.REACT_APP_DEFAULT_SEARCH_TIMEFRAME_DAYS || '90', 10);
@@ -17,7 +18,7 @@ const DEFAULT_EMAIL_FOLDERS = ['INBOX'];
 const EmailProcessingPage = ({ refreshJobList }) => {
   // Context for loading state
   // eslint-disable-next-line no-unused-vars
-  const { setLoading } = useContext(LoadingContext);
+  const { setLoadingMessage } = useLoading();
 
   // State for email credentials
   const [credentials, setCredentials] = useState([]);
