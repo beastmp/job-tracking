@@ -112,6 +112,9 @@ async function getImapConfig(credentialId, options = {}) {
   return { imapConfig, searchOptions, credentials };
 }
 
+// Export the getImapConfig function so it can be used by other modules
+exports.getImapConfig = getImapConfig;
+
 /**
  * Search emails in batches to avoid timeouts
  * @param {Object} imapConfig - IMAP configuration
