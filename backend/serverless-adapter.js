@@ -9,6 +9,7 @@ const { connectToDatabase } = require('./utils/dbConnection');
 const jobRoutes = require('./routes/jobs');
 const uploadRoutes = require('./routes/uploads');
 const emailRoutes = require('./routes/emails');
+const emailProcessingRoutes = require('./routes/emailProcessing_new');
 
 // Create Express app - we're reusing most of the code from server.js
 const app = express();
@@ -93,7 +94,7 @@ app.get('/api', (req, res) => {
   res.status(200).json({
     message: 'Job Tracking API is running',
     version: '1.0.0',
-    endpoints: ['/api/jobs', '/api/emails', '/api/upload', '/api/health']
+    endpoints: ['/api/jobs', '/api/emails', '/api/upload', '/api/health', '/api/email-processing']
   });
 });
 
@@ -101,6 +102,7 @@ app.get('/api', (req, res) => {
 app.use('/api/jobs', jobRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/emails', emailRoutes);
+app.use('/api/email-processing', emailProcessingRoutes);
 
 // Generic serverless handler
 const serverlessHandler = async (req, res) => {

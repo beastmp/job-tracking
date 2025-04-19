@@ -20,6 +20,7 @@ const createApiInstance = (timeout = 120000) => {
 // Create axios instances with base URL and default configs
 const api = createApiInstance();
 export const longRunningApi = createApiInstance(300000); // 5 minutes for email operations
+export const emailProcessingApi = createApiInstance(600000); // 10 minutes for email processing operations
 
 // Track all active requests to manage loading states
 let activeRequests = 0;
@@ -92,6 +93,7 @@ export const setLoadingHandlers = (handlers) => {
 
   setupInterceptors(api);
   setupInterceptors(longRunningApi);
+  setupInterceptors(emailProcessingApi);
 };
 
 // Manually control loading state (for operations not using the API)
@@ -153,5 +155,13 @@ export const emailsAPI = {
   saveCredentials: (data) => api.post('/emails/credentials', data),
   getCredentials: () => api.get('/emails/credentials'),
   deleteCredentials: (id) => api.delete(`/emails/credentials/${id}`),
-  getEnrichmentStatus: () => api.get('/emails/enrichment-status')
+  getEnrichmentStatus: () => api.get('/emails/enrichment-status'),
+
+  // New email processing API endpoints
+  getActiveJobs: () => emailProcessingApi.get('/email-processing/active-jobs'),
+  startEmailSearch: (data) => emailProcessingApi.post('/email-processing/search', data),
+  startEmailSync: (data) => emailProcessingApi.post('/email-processing/sync', data),
+  startEnrichment: () => emailProcessingApi.post('/email-processing/enrichment'),
+  enrichUrl: (data) => emailProcessingApi.post('/email-processing/enrich-url', data),
+  getJobDetails: (jobId) => emailProcessingApi.get(`/email-processing/job/${jobId}`)
 };
