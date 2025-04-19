@@ -15,6 +15,7 @@ import ViewJobPage from './components/ViewJobPage';
 import ExcelUploadPage from './components/ExcelUploadPage';
 import EmailIntegration from './components/EmailIntegration';
 import EmailProcessingPage from './components/EmailProcessingPage_new';
+import EmailProcessingPage01 from './components/EmailProcessingPage_new01';
 import NotFoundPage from './components/NotFoundPage';
 
 // Main app wrapper to provide loading context
@@ -238,6 +239,13 @@ function AppMain() {
 
             <Route path="/email-processing" element={
               <EmailProcessingPage
+                onImportJobs={refreshData}
+                refreshData={refreshData}
+              />
+            } />
+
+            <Route path="/email-processing" element={
+              <EmailProcessingPage01
                 onImportJobs={refreshData}
                 refreshData={refreshData}
               />

@@ -1,167 +1,104 @@
 import axios from 'axios';
 
-// Get API URL from environment variable, or use relative path in development
-const API_URL = process.env.REACT_APP_API_URL || '';
+// Get base URL for API from environment variable or default to localhost in development
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
-// Function to create API with interceptors for loading states
-const createApiInstance = (timeout = 120000) => {
-  const instance = axios.create({
-    baseURL: API_URL,
-    timeout: parseInt(process.env.REACT_APP_API_TIMEOUT || timeout.toString(), 10),
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  });
+// Create an axios instance for consistent headers and base URL
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
 
-  // We'll add the loading interceptors when we configure the instance with setLoadingHandlers
-  return instance;
+// Add loading handlers (to be used by LoadingContext)
+let loadingHandlers = {
+  setLoading: () => {}, // Default no-op handlers
+  setLoadingMessage: () => {},
+  clearLoading: () => {},
 };
 
-// Create axios instances with base URL and default configs
-const api = createApiInstance();
-export const longRunningApi = createApiInstance(300000); // 5 minutes for email operations
-export const emailProcessingApi = createApiInstance(600000); // 10 minutes for email processing operations
-
-// Track all active requests to manage loading states
-let activeRequests = 0;
-let loadingHandlers = null;
-
-// Function to add loading handlers to the API instances
 export const setLoadingHandlers = (handlers) => {
-  if (!handlers) return;
-
   loadingHandlers = handlers;
-
-  // Add interceptors to both API instances
-  const setupInterceptors = (instance) => {
-    // Request interceptor
-    instance.interceptors.request.use(
-      config => {
-        // Skip loading indicator if skipGlobalLoading is set
-        if (!config.skipGlobalLoading) {
-          // Increment the active requests counter
-          activeRequests++;
-
-          // If this is the first active request, show the loading indicator
-          if (activeRequests === 1 && loadingHandlers.setLoading) {
-            loadingHandlers.setLoading(true);
-          }
-        }
-
-        return config;
-      },
-      error => {
-        // Handle request error
-        if (!error.config?.skipGlobalLoading) {
-          activeRequests--;
-          if (activeRequests === 0 && loadingHandlers.setLoading) {
-            loadingHandlers.setLoading(false);
-          }
-        }
-        return Promise.reject(error);
-      }
-    );
-
-    // Response interceptor
-    instance.interceptors.response.use(
-      response => {
-        // Skip decrementing if skipGlobalLoading is set
-        if (!response.config.skipGlobalLoading) {
-          // Decrement the active requests counter
-          activeRequests--;
-
-          // If there are no more active requests, hide the loading indicator
-          if (activeRequests === 0 && loadingHandlers.setLoading) {
-            loadingHandlers.setLoading(false);
-          }
-        }
-
-        return response;
-      },
-      error => {
-        // Handle response error
-        if (!error.config?.skipGlobalLoading) {
-          activeRequests--;
-          if (activeRequests === 0 && loadingHandlers.setLoading) {
-            loadingHandlers.setLoading(false);
-          }
-        }
-        return Promise.reject(error);
-      }
-    );
-  };
-
-  setupInterceptors(api);
-  setupInterceptors(longRunningApi);
-  setupInterceptors(emailProcessingApi);
 };
 
-// Manually control loading state (for operations not using the API)
-export const manualLoadingStart = (message = '', progress = 0) => {
-  if (loadingHandlers && loadingHandlers.setLoading) {
-    loadingHandlers.setLoading(true, message, progress);
+// Request interceptor to show loading state
+api.interceptors.request.use(
+  (config) => {
+    loadingHandlers.setLoading(true);
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
   }
-};
+);
 
-export const manualLoadingUpdate = (message = '', progress = 0) => {
-  if (loadingHandlers) {
-    if (loadingHandlers.setLoadingMessage) loadingHandlers.setLoadingMessage(message);
-    if (loadingHandlers.setLoadingProgress) loadingHandlers.setLoadingProgress(progress);
+// Response interceptor to hide loading state
+api.interceptors.response.use(
+  (response) => {
+    loadingHandlers.clearLoading();
+    return response;
+  },
+  (error) => {
+    loadingHandlers.clearLoading();
+    return Promise.reject(error);
   }
-};
+);
 
-export const manualLoadingEnd = () => {
-  if (loadingHandlers && loadingHandlers.setLoading) {
-    loadingHandlers.setLoading(false);
-  }
-};
+// Create a special instance for email processing which might take longer
+const emailProcessingApi = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  // Longer timeout for email processing requests
+  timeout: 300000, // 5 minutes
+});
 
-export default api;
+// Export all API methods
+const apiService = {
+  // Jobs API
+  get: (endpoint) => api.get(endpoint),
+  post: (endpoint, data) => api.post(endpoint, data),
+  put: (endpoint, data) => api.put(endpoint, data),
+  delete: (endpoint) => api.delete(endpoint),
+  patch: (endpoint, data) => api.patch(endpoint),
 
-// Export specialized API instances for specific domains
-export const jobsAPI = {
+  // Job-specific APIs
   getJobs: () => api.get('/jobs'),
-  getJob: (id) => api.get(`/jobs/${id}`),
   createJob: (jobData) => api.post('/jobs', jobData),
   updateJob: (id, jobData) => api.put(`/jobs/${id}`, jobData),
   deleteJob: (id) => api.delete(`/jobs/${id}`),
-  bulkDelete: (ids) => api.post('/jobs/bulk-delete', { ids }),
-  reEnrichJobs: (ids) => api.post('/jobs/re-enrich', { ids })
-};
+  getJob: (id) => api.get(`/jobs/${id}`),
+  bulkDeleteJobs: (ids) => api.post('/jobs/bulk-delete', { ids }),
+  getJobStats: () => api.get('/jobs/stats'),
+  reEnrichJobs: (jobIds) => api.post('/jobs/re-enrich', { jobIds }),
+  extractDataFromWebsite: (url) => api.post('/jobs/extract-from-website', { url }),
 
-// Email operations API
-export const emailsAPI = {
-  // Sync emails with option to skip global loading indicator
-  syncEmails: (params) => longRunningApi.post('/emails/sync', params,
-    {
-      skipGlobalLoading: true,
-      timeout: 300000 // Explicitly set timeout to 5 minutes
-    }),
+  // Excel upload API
+  uploadExcel: (formData) => api.post('/upload/import-excel', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  }),
 
-  // New background sync function returns a job ID immediately
-  syncEmailsBackground: (params) => api.post('/emails/sync-background', params),
-
-  // New background search function returns a job ID immediately
-  searchEmailsBackground: (params) => api.post('/emails/search-background', params),
-
-  // Import items in the background after search
-  importItemsBackground: (data) => api.post('/emails/import-background', data),
-
-  // Get job status by ID
-  getJobStatus: (jobId) => api.get(`/emails/job/${jobId}`),
-
-  getFolders: (credentialId) => api.post('/emails/get-folders', { credentialId }),
-  importItems: (data) => api.post('/emails/import-all', data),
+  // Legacy Email API methods
+  searchEmails: (data) => api.post('/emails/search', data),
+  importAllItems: (data) => api.post('/emails/import-all', data),
+  syncEmailItems: (data) => api.post('/emails/sync', data),
   saveCredentials: (data) => api.post('/emails/credentials', data),
   getCredentials: () => api.get('/emails/credentials'),
   deleteCredentials: (id) => api.delete(`/emails/credentials/${id}`),
   getEnrichmentStatus: () => api.get('/emails/enrichment-status'),
 
   // New email processing API endpoints
-  getActiveJobs: () => emailProcessingApi.get('/email-processing/active-jobs'),
+  getActiveJobs: () => api.get('/email-processing/active-jobs'),
   startEmailSearch: (data) => emailProcessingApi.post('/email-processing/search', data),
   startEmailSync: (data) => emailProcessingApi.post('/email-processing/sync', data),
-  startEnrichment: () => emailProcessingApi.post('/email-processing/enrichment'),
-  enrichUrl: (data) => emailProcessingApi.post('/email-processing/enrich-url', data),
-  getJobDetails: (jobId) => emailProcessingApi.get(`/email-processing/job/${jobId}`)
+  startEnrichment: () => api.post('/email-processing/enrichment'),
+  enrichUrl: (data) => api.post('/email-processing/enrich-url', data),
+  getJobDetails: (jobId) => api.get(`/email-processing/job/${jobId}`),
+  getEmailProcessingEnrichmentStatus: () => api.get('/email-processing/enrichment-status'),
 };
+
+export default apiService;
