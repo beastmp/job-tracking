@@ -135,6 +135,19 @@ export const emailsAPI = {
       skipGlobalLoading: true,
       timeout: 300000 // Explicitly set timeout to 5 minutes
     }),
+
+  // New background sync function returns a job ID immediately
+  syncEmailsBackground: (params) => api.post('/emails/sync-background', params),
+
+  // New background search function returns a job ID immediately
+  searchEmailsBackground: (params) => api.post('/emails/search-background', params),
+
+  // Import items in the background after search
+  importItemsBackground: (data) => api.post('/emails/import-background', data),
+
+  // Get job status by ID
+  getJobStatus: (jobId) => api.get(`/emails/job/${jobId}`),
+
   getFolders: (credentialId) => api.post('/emails/get-folders', { credentialId }),
   importItems: (data) => api.post('/emails/import-all', data),
   saveCredentials: (data) => api.post('/emails/credentials', data),

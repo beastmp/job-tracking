@@ -32,6 +32,7 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
   // Search and import related states
   const [emailResults, setEmailResults] = useState(null);
   const [emailSearchLoading, setEmailSearchLoading] = useState(false);
+  // eslint-disable-next-line no-unused-vars
   const [importLoading, setImportLoading] = useState(false);
   const [itemsToProcess, setItemsToProcess] = useState([]);
 
@@ -46,6 +47,10 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
     enrichmentTotal: 0,
     enrichmentProcessed: 0
   });
+
+  // Job tracking states
+  const [activeJobId, setActiveJobId] = useState(null);
+  const [jobPollingInterval, setJobPollingInterval] = useState(null);
 
   // Selection states
   const [ignorePreviousImport, setIgnorePreviousImport] = useState(false);
@@ -86,6 +91,30 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
 
     return () => clearInterval(interval);
   }, [enrichmentStatus.isProcessing, enrichmentStatus.queueSize]);
+
+  // Effect to poll for job status if we have an active job
+  useEffect(() => {
+    if (activeJobId) {
+      // Start polling for job updates
+      const interval = setInterval(() => {
+        pollJobStatus(activeJobId);
+      }, 2000); // Check every 2 seconds
+
+      // Save the interval ID so we can clear it later
+      setJobPollingInterval(interval);
+
+      return () => {
+        if (interval) clearInterval(interval);
+      };
+    } else {
+      // Clear any existing polling interval when there's no active job
+      if (jobPollingInterval) {
+        clearInterval(jobPollingInterval);
+        setJobPollingInterval(null);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeJobId]);
 
   // Fetch stored email credentials
   const fetchCredentials = async () => {
@@ -244,223 +273,223 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
   };
 
   // Import selected items
-  const importItems = async () => {
-    if (selectedItems.length === 0) return;
+  // const importItems = async () => {
+  //   if (selectedItems.length === 0) return;
 
-    try {
-      setImportLoading(true);
-      setProgress(10);
-      setProgressMessage('Starting import process...');
+  //   try {
+  //     setImportLoading(true);
+  //     setProgress(10);
+  //     setProgressMessage('Starting import process...');
 
-      // Start progress simulation
-      const progressInterval = simulateProgress('import');
+  //     // Start progress simulation
+  //     const progressInterval = simulateProgress('import');
 
-      // Filter items to only those selected
-      const itemsToImport = itemsToProcess.filter(item =>
-        selectedItems.includes(item.id || item._id)
-      );
+  //     // Filter items to only those selected
+  //     const itemsToImport = itemsToProcess.filter(item =>
+  //       selectedItems.includes(item.id || item._id)
+  //     );
 
-      // Group items by type
-      const applications = itemsToImport.filter(item => item.type === 'application');
-      const statusUpdates = itemsToImport.filter(item => item.type === 'statusUpdate');
-      const responses = itemsToImport.filter(item => item.type === 'response');
+  //     // Group items by type
+  //     const applications = itemsToImport.filter(item => item.type === 'application');
+  //     const statusUpdates = itemsToImport.filter(item => item.type === 'statusUpdate');
+  //     const responses = itemsToImport.filter(item => item.type === 'response');
 
-      // Optimistic UI update - show preview of what will be changed
-      setToastMessage({
-        type: 'info',
-        text: `Importing ${applications.length} new applications, ${statusUpdates.length} status updates, and ${responses.length} responses...`
-      });
+  //     // Optimistic UI update - show preview of what will be changed
+  //     setToastMessage({
+  //       type: 'info',
+  //       text: `Importing ${applications.length} new applications, ${statusUpdates.length} status updates, and ${responses.length} responses...`
+  //     });
 
-      // Fix the API endpoint path
-      const response = await api.post(`/emails/import-all`, {
-        applications,
-        statusUpdates,
-        responses
-      });
+  //     // Fix the API endpoint path
+  //     const response = await api.post(`/emails/import-all`, {
+  //       applications,
+  //       statusUpdates,
+  //       responses
+  //     });
 
-      // Clear the interval
-      clearInterval(progressInterval);
+  //     // Clear the interval
+  //     clearInterval(progressInterval);
 
-      // Show completion
-      setProgress(100);
-      setProgressMessage('Import complete!');
+  //     // Show completion
+  //     setProgress(100);
+  //     setProgressMessage('Import complete!');
 
-      setEmailResults({
-        ...emailResults,
-        importMessage: response.data.message,
-        importSuccess: true,
-        importStats: response.data.stats
-      });
+  //     setEmailResults({
+  //       ...emailResults,
+  //       importMessage: response.data.message,
+  //       importSuccess: true,
+  //       importStats: response.data.stats
+  //     });
 
-      // Clear selected items after successful import
-      setSelectedItems([]);
+  //     // Clear selected items after successful import
+  //     setSelectedItems([]);
 
-      // Show success toast
-      setToastMessage({
-        type: 'success',
-        text: `Successfully imported ${response.data.stats.applications?.added || 0} applications, ${response.data.stats.statusUpdates?.processed || 0} status updates, and ${response.data.stats.responses?.processed || 0} responses!`
-      });
+  //     // Show success toast
+  //     setToastMessage({
+  //       type: 'success',
+  //       text: `Successfully imported ${response.data.stats.applications?.added || 0} applications, ${response.data.stats.statusUpdates?.processed || 0} status updates, and ${response.data.stats.responses?.processed || 0} responses!`
+  //     });
 
-      // Use refreshData function from props if available, otherwise use legacy method
-      if (refreshData) {
-        refreshData();
-      } else if (onImportJobs) {
-        onImportJobs();
-      }
+  //     // Use refreshData function from props if available, otherwise use legacy method
+  //     if (refreshData) {
+  //       refreshData();
+  //     } else if (onImportJobs) {
+  //       onImportJobs();
+  //     }
 
-      // Reset progress after a moment
-      setTimeout(() => {
-        setProgress(0);
-        setProgressMessage('');
-      }, 1000);
-    } catch (error) {
-      console.error('Error importing items:', error);
-      setEmailResults({
-        ...emailResults,
-        importMessage: error.response?.data?.message || 'Error importing items',
-        importSuccess: false
-      });
-      setProgress(0);
-      setProgressMessage('');
+  //     // Reset progress after a moment
+  //     setTimeout(() => {
+  //       setProgress(0);
+  //       setProgressMessage('');
+  //     }, 1000);
+  //   } catch (error) {
+  //     console.error('Error importing items:', error);
+  //     setEmailResults({
+  //       ...emailResults,
+  //       importMessage: error.response?.data?.message || 'Error importing items',
+  //       importSuccess: false
+  //     });
+  //     setProgress(0);
+  //     setProgressMessage('');
 
-      // Show error toast
-      setToastMessage({
-        type: 'danger',
-        text: error.response?.data?.message || 'Error importing items'
-      });
-    } finally {
-      setImportLoading(false);
-    }
-  };
+  //     // Show error toast
+  //     setToastMessage({
+  //       type: 'danger',
+  //       text: error.response?.data?.message || 'Error importing items'
+  //     });
+  //   } finally {
+  //     setImportLoading(false);
+  //   }
+  // };
 
-  // Sync (search + import in one operation)
-  const runSync = async (credentialId) => {
-    try {
-      setEmailSearchLoading(true);
-      setEmailResults(null);
-      setProgress(5);
-      setProgressMessage('Initializing sync operation...');
-      // Reset processing details when starting a new sync
-      setProcessingDetails({
-        emailsTotal: 0,
-        emailsProcessed: 0,
-        foldersTotal: 0,
-        foldersProcessed: 0,
-        enrichmentTotal: 0,
-        enrichmentProcessed: 0
-      });
+  // // Sync (search + import in one operation)
+  // const runSync = async (credentialId) => {
+  //   try {
+  //     setEmailSearchLoading(true);
+  //     setEmailResults(null);
+  //     setProgress(5);
+  //     setProgressMessage('Initializing sync operation...');
+  //     // Reset processing details when starting a new sync
+  //     setProcessingDetails({
+  //       emailsTotal: 0,
+  //       emailsProcessed: 0,
+  //       foldersTotal: 0,
+  //       foldersProcessed: 0,
+  //       enrichmentTotal: 0,
+  //       enrichmentProcessed: 0
+  //     });
 
-      // Start progress simulation
-      const progressInterval = simulateProgress('sync');
+  //     // Start progress simulation
+  //     const progressInterval = simulateProgress('sync');
 
-      // Show optimistic UI update
-      setToastMessage({
-        type: 'info',
-        text: 'Sync operation started - searching and importing job data automatically...'
-      });
+  //     // Show optimistic UI update
+  //     setToastMessage({
+  //       type: 'info',
+  //       text: 'Sync operation started - searching and importing job data automatically...'
+  //     });
 
-      // Use the emailsAPI with longer timeout for this operation
-      const response = await emailsAPI.syncEmails({
-        credentialId,
-        ignorePreviousImport,
-        // Add a progress callback to update processing details
-        onProgress: (progressData) => {
-          if (progressData) {
-            setProcessingDetails(prevDetails => ({
-              ...prevDetails,
-              emailsTotal: progressData.emailsTotal || prevDetails.emailsTotal,
-              emailsProcessed: progressData.emailsProcessed || prevDetails.emailsProcessed,
-              foldersTotal: progressData.foldersTotal || prevDetails.foldersTotal,
-              foldersProcessed: progressData.foldersProcessed || prevDetails.foldersProcessed,
-              enrichmentTotal: progressData.enrichmentTotal || prevDetails.enrichmentTotal,
-              enrichmentProcessed: progressData.enrichmentProcessed || prevDetails.enrichmentProcessed
-            }));
+  //     // Use the emailsAPI with longer timeout for this operation
+  //     const response = await emailsAPI.syncEmails({
+  //       credentialId,
+  //       ignorePreviousImport,
+  //       // Add a progress callback to update processing details
+  //       onProgress: (progressData) => {
+  //         if (progressData) {
+  //           setProcessingDetails(prevDetails => ({
+  //             ...prevDetails,
+  //             emailsTotal: progressData.emailsTotal || prevDetails.emailsTotal,
+  //             emailsProcessed: progressData.emailsProcessed || prevDetails.emailsProcessed,
+  //             foldersTotal: progressData.foldersTotal || prevDetails.foldersTotal,
+  //             foldersProcessed: progressData.foldersProcessed || prevDetails.foldersProcessed,
+  //             enrichmentTotal: progressData.enrichmentTotal || prevDetails.enrichmentTotal,
+  //             enrichmentProcessed: progressData.enrichmentProcessed || prevDetails.enrichmentProcessed
+  //           }));
 
-            // Update progress percentage based on folder and email processing
-            if (progressData.foldersTotal > 0) {
-              const folderProgress = Math.round((progressData.foldersProcessed / progressData.foldersTotal) * 50);
-              setProgress(Math.min(5 + folderProgress, 55));
-            }
+  //           // Update progress percentage based on folder and email processing
+  //           if (progressData.foldersTotal > 0) {
+  //             const folderProgress = Math.round((progressData.foldersProcessed / progressData.foldersTotal) * 50);
+  //             setProgress(Math.min(5 + folderProgress, 55));
+  //           }
 
-            if (progressData.emailsTotal > 0) {
-              const emailProgress = Math.round((progressData.emailsProcessed / progressData.emailsTotal) * 40);
-              setProgress(Math.min(55 + emailProgress, 95));
-            }
-          }
-        }
-      });
+  //           if (progressData.emailsTotal > 0) {
+  //             const emailProgress = Math.round((progressData.emailsProcessed / progressData.emailsTotal) * 40);
+  //             setProgress(Math.min(55 + emailProgress, 95));
+  //           }
+  //         }
+  //       }
+  //     });
 
-      // Clear the interval
-      clearInterval(progressInterval);
+  //     // Clear the interval
+  //     clearInterval(progressInterval);
 
-      // Show completion
-      setProgress(100);
-      setProgressMessage('Sync complete!');
+  //     // Show completion
+  //     setProgress(100);
+  //     setProgressMessage('Sync complete!');
 
-      // Combine all items for processing in the UI
-      const allItems = [
-        ...(response.data.applications || []).map(app => ({ ...app, type: 'application' })),
-        ...(response.data.statusUpdates || []).map(update => ({ ...update, type: 'statusUpdate' })),
-        ...(response.data.responses || []).map(resp => ({ ...resp, type: 'response' }))
-      ];
+  //     // Combine all items for processing in the UI
+  //     const allItems = [
+  //       ...(response.data.applications || []).map(app => ({ ...app, type: 'application' })),
+  //       ...(response.data.statusUpdates || []).map(update => ({ ...update, type: 'statusUpdate' })),
+  //       ...(response.data.responses || []).map(resp => ({ ...resp, type: 'response' }))
+  //     ];
 
-      // Update the items to process state
-      setItemsToProcess(allItems);
+  //     // Update the items to process state
+  //     setItemsToProcess(allItems);
 
-      // Auto-select new items for potential import
-      const newItemIds = allItems
-        .filter(item => !item.exists)
-        .map(item => item.id || item._id);
-      setSelectedItems(newItemIds);
+  //     // Auto-select new items for potential import
+  //     const newItemIds = allItems
+  //       .filter(item => !item.exists)
+  //       .map(item => item.id || item._id);
+  //     setSelectedItems(newItemIds);
 
-      setEmailResults({
-        success: true,
-        message: response.data.message,
-        importStats: response.data.stats,
-        applications: response.data.applications || [],
-        statusUpdates: response.data.statusUpdates || [],
-        responses: response.data.responses || []
-      });
+  //     setEmailResults({
+  //       success: true,
+  //       message: response.data.message,
+  //       importStats: response.data.stats,
+  //       applications: response.data.applications || [],
+  //       statusUpdates: response.data.statusUpdates || [],
+  //       responses: response.data.responses || []
+  //     });
 
-      // Show success toast
-      setToastMessage({
-        type: 'success',
-        text: response.data.message
-      });
+  //     // Show success toast
+  //     setToastMessage({
+  //       type: 'success',
+  //       text: response.data.message
+  //     });
 
-      // Use refreshData function from props if available, otherwise use legacy method
-      if (refreshData) {
-        refreshData();
-      } else if (onImportJobs) {
-        onImportJobs();
-      }
+  //     // Use refreshData function from props if available, otherwise use legacy method
+  //     if (refreshData) {
+  //       refreshData();
+  //     } else if (onImportJobs) {
+  //       onImportJobs();
+  //     }
 
-      // Reset progress after a moment
-      setTimeout(() => {
-        setProgress(0);
-        setProgressMessage('');
-      }, 1000);
-    } catch (error) {
-      console.error('Error with sync operation:', error);
-      setEmailResults({
-        success: false,
-        message: error.message || 'Error with sync operation: The operation timed out. Try again with fewer folders or a shorter time period.',
-        applications: [],
-        statusUpdates: [],
-        responses: []
-      });
-      setProgress(0);
-      setProgressMessage('');
+  //     // Reset progress after a moment
+  //     setTimeout(() => {
+  //       setProgress(0);
+  //       setProgressMessage('');
+  //     }, 1000);
+  //   } catch (error) {
+  //     console.error('Error with sync operation:', error);
+  //     setEmailResults({
+  //       success: false,
+  //       message: error.message || 'Error with sync operation: The operation timed out. Try again with fewer folders or a shorter time period.',
+  //       applications: [],
+  //       statusUpdates: [],
+  //       responses: []
+  //     });
+  //     setProgress(0);
+  //     setProgressMessage('');
 
-      // Show error toast
-      setToastMessage({
-        type: 'danger',
-        text: error.message || 'Error with sync operation'
-      });
-    } finally {
-      setEmailSearchLoading(false);
-    }
-  };
+  //     // Show error toast
+  //     setToastMessage({
+  //       type: 'danger',
+  //       text: error.message || 'Error with sync operation'
+  //     });
+  //   } finally {
+  //     setEmailSearchLoading(false);
+  //   }
+  // };
 
   // Function to fetch available email folders
   const fetchAvailableFolders = async (credentialId) => {
@@ -570,6 +599,347 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
       }
     } catch (error) {
       console.error("Error fetching enrichment status:", error);
+    }
+  };
+
+  // Poll for job status updates
+  const pollJobStatus = async (jobId) => {
+    if (!jobId) return;
+
+    try {
+      const response = await emailsAPI.getJobStatus(jobId);
+      const job = response.data.job;
+
+      if (!job) {
+        // Job not found, stop polling
+        setActiveJobId(null);
+        return;
+      }
+
+      // Update progress based on job status
+      if (job.status === 'processing') {
+        // Update progress bar
+        setProgress(job.progress || 10);
+        if (job.message) setProgressMessage(job.message);
+
+        // If there are processing details in the job, update them
+        if (job.updates && job.updates.length > 0) {
+          // Get the latest update
+          const latestUpdate = job.updates[job.updates.length - 1];
+          if (latestUpdate.message) {
+            setProgressMessage(latestUpdate.message);
+          }
+        }
+      }
+      else if (job.status === 'completed') {
+        // Job completed successfully
+        setProgress(100);
+        setProgressMessage('Operation completed successfully!');
+
+        // Extract the results
+        if (job.result) {
+          // Handle search results
+          if (job.type === 'email_search') {
+            // Process search results
+            handleSearchResults(job.result);
+          }
+          // Handle import results
+          else if (job.type === 'email_import') {
+            handleImportResults(job.result);
+          }
+          // Handle sync results (combined search + import)
+          else if (job.type === 'email_sync') {
+            handleSyncResults(job.result);
+          }
+        }
+
+        // Stop polling
+        setActiveJobId(null);
+
+        // After a moment, reset progress indicators
+        setTimeout(() => {
+          setProgress(0);
+          setProgressMessage('');
+        }, 2000);
+      }
+      else if (job.status === 'failed') {
+        // Job failed
+        setProgress(0);
+        setProgressMessage('');
+        setEmailSearchLoading(false);
+        setImportLoading(false);
+
+        // Show error message
+        setToastMessage({
+          type: 'danger',
+          text: job.error || 'Operation failed'
+        });
+
+        // Set email results with failure info
+        setEmailResults({
+          success: false,
+          message: job.error || 'The operation failed. Please try again later.',
+          applications: [],
+          statusUpdates: [],
+          responses: []
+        });
+
+        // Stop polling
+        setActiveJobId(null);
+      }
+    } catch (error) {
+      console.error('Error polling job status:', error);
+      // Stop polling on error
+      setActiveJobId(null);
+    }
+  };
+
+  // Handle search results from background job
+  const handleSearchResults = (result) => {
+    setEmailSearchLoading(false);
+
+    // Combine all items for processing in the UI
+    const allItems = [
+      ...(result.applications || []).map(app => ({ ...app, type: 'application', id: app._id || app.id })),
+      ...(result.statusUpdates || []).map(update => ({ ...update, type: 'statusUpdate', id: update._id || update.id })),
+      ...(result.responses || []).map(resp => ({ ...resp, type: 'response', id: resp._id || resp.id }))
+    ];
+
+    // Update the items to process state
+    setItemsToProcess(allItems);
+
+    // Auto-select new items for potential import
+    const newItemIds = allItems
+      .filter(item => !item.exists)
+      .map(item => item.id || item._id);
+    setSelectedItems(newItemIds);
+
+    // Update processing statistics if available
+    if (result.processingStats) {
+      setProcessingDetails(result.processingStats);
+    }
+
+    // Set email results for display
+    setEmailResults({
+      success: true,
+      message: result.message || `Found ${allItems.length} items`,
+      stats: result.stats,
+      applications: result.applications || [],
+      statusUpdates: result.statusUpdates || [],
+      responses: result.responses || [],
+      pendingEnrichments: result.pendingEnrichments || 0
+    });
+
+    // Show success toast if we have items
+    if (allItems.length > 0) {
+      setToastMessage({
+        type: 'success',
+        text: `Found ${result.stats?.total || allItems.length} items (${result.stats?.new || 0} new)`
+      });
+    } else {
+      setToastMessage({
+        type: 'info',
+        text: 'No new job-related emails were found'
+      });
+    }
+  };
+
+  // Handle import results from background job
+  const handleImportResults = (result) => {
+    setImportLoading(false);
+
+    // Update email results with import success info
+    setEmailResults({
+      ...emailResults,
+      importMessage: result.message || 'Items imported successfully',
+      importSuccess: true,
+      importStats: result.stats
+    });
+
+    // Show success toast
+    setToastMessage({
+      type: 'success',
+      text: `Successfully imported ${result.stats?.applications?.added || 0} applications, ${result.stats?.statusUpdates?.processed || 0} status updates, and ${result.stats?.responses?.processed || 0} responses!`
+    });
+
+    // Clear selected items after successful import
+    setSelectedItems([]);
+
+    // Refresh the jobs data
+    if (refreshData) {
+      refreshData();
+    } else if (onImportJobs) {
+      onImportJobs();
+    }
+  };
+
+  // Handle sync results from background job
+  const handleSyncResults = (result) => {
+    setEmailSearchLoading(false);
+
+    // Combine both search and import results
+    handleSearchResults(result);
+    handleImportResults(result);
+  };
+
+  // Start a background email search
+  // const runBackgroundSearch = async (credentialId) => {
+  //   try {
+  //     setEmailSearchLoading(true);
+  //     setEmailResults(null);
+  //     setProgress(5);
+  //     setProgressMessage('Initializing search operation...');
+
+  //     // Reset processing details
+  //     setProcessingDetails({
+  //       emailsTotal: 0,
+  //       emailsProcessed: 0,
+  //       foldersTotal: 0,
+  //       foldersProcessed: 0,
+  //       enrichmentTotal: 0,
+  //       enrichmentProcessed: 0
+  //     });
+
+  //     // Start progress simulation
+  //     const progressInterval = simulateProgress('search');
+
+  //     // Show optimistic UI update
+  //     setToastMessage({
+  //       type: 'info',
+  //       text: 'Email search started in the background...'
+  //     });
+
+  //     // Start the background search job
+  //     const response = await emailsAPI.searchEmailsBackground({
+  //       credentialId,
+  //       ignorePreviousImport
+  //     });
+
+  //     // Clear progress simulation
+  //     clearInterval(progressInterval);
+
+  //     // Set the active job ID for polling
+  //     setActiveJobId(response.data.jobId);
+
+  //   } catch (error) {
+  //     console.error('Error starting background search:', error);
+  //     setEmailSearchLoading(false);
+  //     setProgress(0);
+  //     setProgressMessage('');
+
+  //     // Show error toast
+  //     setToastMessage({
+  //       type: 'danger',
+  //       text: error.response?.data?.message || 'Error starting background search'
+  //     });
+  //   }
+  // };
+
+  // Import items using background job
+  // const importItemsBackground = async () => {
+  //   if (selectedItems.length === 0) return;
+
+  //   try {
+  //     setImportLoading(true);
+  //     setProgress(10);
+  //     setProgressMessage('Starting import process...');
+
+  //     // Start progress simulation
+  //     const progressInterval = simulateProgress('import');
+
+  //     // Filter items to only those selected
+  //     const itemsToImport = itemsToProcess.filter(item =>
+  //       selectedItems.includes(item.id || item._id)
+  //     );
+
+  //     // Group items by type
+  //     const applications = itemsToImport.filter(item => item.type === 'application');
+  //     const statusUpdates = itemsToImport.filter(item => item.type === 'statusUpdate');
+  //     const responses = itemsToImport.filter(item => item.type === 'response');
+
+  //     // Optimistic UI update
+  //     setToastMessage({
+  //       type: 'info',
+  //       text: `Starting import of ${applications.length} applications, ${statusUpdates.length} status updates, and ${responses.length} responses...`
+  //     });
+
+  //     // Start the background import job
+  //     const response = await emailsAPI.importItemsBackground({
+  //       applications,
+  //       statusUpdates,
+  //       responses
+  //     });
+
+  //     // Clear progress simulation
+  //     clearInterval(progressInterval);
+
+  //     // Set the active job ID for polling
+  //     setActiveJobId(response.data.jobId);
+
+  //   } catch (error) {
+  //     console.error('Error starting background import:', error);
+  //     setImportLoading(false);
+  //     setProgress(0);
+  //     setProgressMessage('');
+
+  //     // Show error toast
+  //     setToastMessage({
+  //       type: 'danger',
+  //       text: error.response?.data?.message || 'Error importing items'
+  //     });
+  //   }
+  // };
+
+  // Start a background sync operation (search + import)
+  const runBackgroundSync = async (credentialId) => {
+    try {
+      setEmailSearchLoading(true);
+      setEmailResults(null);
+      setProgress(5);
+      setProgressMessage('Initializing sync operation...');
+
+      // Reset processing details
+      setProcessingDetails({
+        emailsTotal: 0,
+        emailsProcessed: 0,
+        foldersTotal: 0,
+        foldersProcessed: 0,
+        enrichmentTotal: 0,
+        enrichmentProcessed: 0
+      });
+
+      // Start progress simulation
+      const progressInterval = simulateProgress('sync');
+
+      // Show optimistic UI update
+      setToastMessage({
+        type: 'info',
+        text: 'Email sync started in the background - this will search and import job data automatically...'
+      });
+
+      // Start the background sync job
+      const response = await emailsAPI.syncEmailsBackground({
+        credentialId,
+        ignorePreviousImport
+      });
+
+      // Clear progress simulation
+      clearInterval(progressInterval);
+
+      // Set the active job ID for polling
+      setActiveJobId(response.data.jobId);
+
+    } catch (error) {
+      console.error('Error starting background sync:', error);
+      setEmailSearchLoading(false);
+      setProgress(0);
+      setProgressMessage('');
+
+      // Show error toast
+      setToastMessage({
+        type: 'danger',
+        text: error.response?.data?.message || 'Error syncing emails'
+      });
     }
   };
 
@@ -899,10 +1269,10 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
 
                           <button
                             className="btn btn-sm btn-success"
-                            onClick={() => runSync(credential._id)}
-                            disabled={emailSearchLoading}
+                            onClick={() => runBackgroundSync(credential._id)}
+                            disabled={emailSearchLoading || !!activeJobId}
                           >
-                            Sync & Import
+                            {activeJobId ? 'Processing...' : 'Sync & Import'}
                           </button>
 
                           <div className="form-check form-check-inline align-self-center ms-2">
@@ -1120,17 +1490,11 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
                       </table>
                     </div>
 
-                    <button
-                      className="btn btn-primary mt-3"
-                      onClick={importItems}
-                      disabled={importLoading || selectedItems.length === 0}
-                    >
-                      {importLoading ? 'Importing...' : (
-                        selectedItems.length === 0 ?
-                        'Select Items to Import' :
-                        `Import ${selectedItems.length} Selected Item${selectedItems.length !== 1 ? 's' : ''}`
-                      )}
-                    </button>
+                    <div className="alert alert-info mt-3">
+                      <i className="bi bi-info-circle me-2"></i>
+                      To import these items, please run a new <strong>Sync &amp; Import</strong> operation.
+                      The sync process combines both searching and importing into a single step.
+                    </div>
                   </div>
                 )}
               </div>

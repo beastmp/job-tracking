@@ -2206,3 +2206,377 @@ async function parseGenericResponseEmail(email, defaultResponse = null) {
     return null;
   }
 }
+
+/**
+ * Process items in the background
+ * @param {string} jobId - Job ID for tracking
+ * @param {Array} applications - Applications to import
+ * @param {Array} statusUpdates - Status updates to process
+ * @param {Array} responses - Responses to process
+ * @returns {Promise<void>}
+ */
+exports.processItemsInBackground = async (jobId, applications = [], statusUpdates = [], responses = []) => {
+  const jobQueue = require('../utils/jobQueue');
+
+  try {
+    // Start the job
+    jobQueue.startJob(jobId);
+
+    // Counters for tracking progress
+    let totalItems = applications.length + statusUpdates.length + responses.length;
+    let processedItems = 0;
+    let currentProgress = 5; // Starting progress from 5%
+
+    // Process applications (only non-existent ones)
+    const newApplications = applications.filter(app => !app.exists);
+    const existingCount = applications.length - newApplications.length;
+
+    jobQueue.updateJob(jobId, {
+      message: `Starting to process ${newApplications.length} new applications (${existingCount} already exist)`,
+      progress: 10
+    });
+
+    // Process applications one by one with progress updates
+    for (const application of newApplications) {
+      try {
+        console.log(`Background job ${jobId}: Processing application for ${application.jobTitle} at ${application.company}`);
+
+        // Enrich the item if applicable
+        let enrichedApplication = application;
+        if (application.website && application.website.includes('linkedin.com/jobs/view')) {
+          jobQueue.updateJob(jobId, {
+            message: `Enriching LinkedIn data for ${application.company} - ${application.jobTitle}`,
+          });
+
+          try {
+            // Process enrichment directly and wait for the result
+            const enrichedData = await linkedInService.enrichJobDataDirectly(application.website);
+
+            if (enrichedData) {
+              enrichedApplication = linkedInService.applyEnrichmentToJob(application, enrichedData);
+            }
+          } catch (enrichError) {
+            console.error('Error enriching job data:', enrichError);
+            // Continue with original data if enrichment fails
+          }
+        }
+
+        // Save the job to database
+        const newJob = new Job({
+          source: enrichedApplication.source || 'LinkedIn',
+          applicationThrough: enrichedApplication.applicationThrough || 'LinkedIn',
+          company: enrichedApplication.company,
+          companyLocation: enrichedApplication.companyLocation,
+          locationType: enrichedApplication.locationType || 'Remote',
+          employmentType: enrichedApplication.employmentType || 'Full-time',
+          jobTitle: enrichedApplication.jobTitle,
+          wagesMin: enrichedApplication.wagesMin || null,
+          wagesMax: enrichedApplication.wagesMax || null,
+          wageType: enrichedApplication.wageType || 'Yearly',
+          applied: enrichedApplication.applied || new Date(),
+          responded: null,
+          response: 'No Response',
+          website: enrichedApplication.website || enrichedApplication.jobUrl || '',
+          description: enrichedApplication.description || '',
+          externalJobId: enrichedApplication.externalJobId || '',
+          notes: enrichedApplication.notes || `Imported from email on ${new Date().toLocaleDateString()}`
+        });
+
+        await newJob.save();
+
+        processedItems++;
+        const percentComplete = Math.min(85, 10 + ((processedItems / totalItems) * 75));
+
+        jobQueue.updateJob(jobId, {
+          message: `Saved job application: ${enrichedApplication.jobTitle} at ${enrichedApplication.company}`,
+          progress: Math.round(percentComplete)
+        });
+
+      } catch (error) {
+        console.error('Background job error processing application:', error);
+        jobQueue.updateJob(jobId, {
+          message: `Error processing application: ${error.message}`,
+        });
+      }
+    }
+
+    // Process status updates
+    jobQueue.updateJob(jobId, {
+      message: `Processing ${statusUpdates.length} status updates`,
+      progress: 85
+    });
+
+    for (const statusUpdate of statusUpdates) {
+      try {
+        console.log(`Background job ${jobId}: Processing status update for ${statusUpdate.jobTitle} at ${statusUpdate.company}`);
+
+        // Find the job to update
+        const job = await jobUtils.findJob(
+          statusUpdate.company,
+          statusUpdate.jobTitle,
+          statusUpdate.externalJobId
+        );
+
+        if (job) {
+          // Add status check
+          job.statusChecks.push({
+            date: new Date(statusUpdate.statusDate),
+            notes: statusUpdate.notes || `Your application was ${statusUpdate.statusType} by ${statusUpdate.company}`
+          });
+
+          await job.save();
+
+          jobQueue.updateJob(jobId, {
+            message: `Updated status for job: ${job.jobTitle} at ${job.company}`,
+          });
+        }
+
+        processedItems++;
+      } catch (error) {
+        console.error('Background job error processing status update:', error);
+      }
+    }
+
+    // Process responses
+    jobQueue.updateJob(jobId, {
+      message: `Processing ${responses.length} responses`,
+      progress: 90
+    });
+
+    for (const response of responses) {
+      try {
+        console.log(`Background job ${jobId}: Processing response for ${response.jobTitle} at ${response.company}`);
+
+        // Find the job to update
+        const job = await jobUtils.findJob(
+          response.company,
+          response.jobTitle,
+          response.externalJobId
+        );
+
+        if (job) {
+          // Only update response if the new status has higher priority
+          const shouldUpdate = jobUtils.shouldUpdateJobStatus(job.response, response.response);
+
+          if (shouldUpdate) {
+            // Add response info
+            job.response = response.response;
+            job.responded = new Date(response.responded);
+          }
+
+          // Always add a status check entry
+          job.statusChecks.push({
+            date: new Date(response.responded),
+            notes: response.notes || `Received a ${response.response.toLowerCase()} from ${response.company}`
+          });
+
+          await job.save();
+
+          jobQueue.updateJob(jobId, {
+            message: `Processed response for job: ${job.jobTitle} at ${job.company}`,
+          });
+        }
+
+        processedItems++;
+      } catch (error) {
+        console.error('Background job error processing response:', error);
+      }
+    }
+
+    // Update last import time
+    if (jobQueue.getJob(jobId).data.credentialId) {
+      try {
+        const credentials = await EmailCredentials.findById(jobQueue.getJob(jobId).data.credentialId);
+        if (credentials) {
+          credentials.lastImport = new Date();
+          await credentials.save();
+
+          jobQueue.updateJob(jobId, {
+            message: `Updated last import time for ${credentials.email}`,
+          });
+        }
+      } catch (error) {
+        console.error('Error updating last import time:', error);
+      }
+    }
+
+    // Calculate statistics for the job result
+    const stats = {
+      applications: {
+        added: newApplications.length,
+        existing: existingCount,
+        errors: 0
+      },
+      statusUpdates: {
+        processed: statusUpdates.length,
+        errors: 0
+      },
+      responses: {
+        processed: responses.length,
+        errors: 0
+      }
+    };
+
+    // Complete the job
+    jobQueue.completeJob(jobId, {
+      stats,
+      processedItems,
+      totalItems
+    });
+
+  } catch (error) {
+    console.error('Background job failed:', error);
+    const jobQueue = require('../utils/jobQueue');
+    jobQueue.failJob(jobId, error);
+  }
+};
+
+/**
+ * Import job items from emails as a background job
+ * @param {string} jobId - Job ID for the background process
+ * @param {Array} applications - Applications to import
+ * @param {Array} statusUpdates - Status updates to process
+ * @param {Array} responses - Responses to process
+ * @returns {string} jobId for tracking the background process
+ */
+exports.importItemsAsJob = (jobId, applications = [], statusUpdates = [], responses = []) => {
+  // Run the processing in the background
+  setImmediate(() => {
+    exports.processItemsInBackground(jobId, applications, statusUpdates, responses)
+      .catch(error => console.error('Background import job error:', error));
+  });
+
+  return jobId;
+};
+
+/**
+ * Sync emails as a background job - search and import in one operation
+ * @param {string} jobId - Job ID
+ * @param {string} credentialId - Credential ID
+ * @param {Object} options - Sync options
+ * @returns {string} Job ID
+ */
+exports.syncEmailsAsJob = (jobId, credentialId, options = {}) => {
+  const jobQueue = require('../utils/jobQueue');
+
+  // Run the processing in the background
+  setImmediate(async () => {
+    try {
+      jobQueue.startJob(jobId);
+      jobQueue.updateJob(jobId, {
+        message: 'Connecting to email server...',
+        progress: 5
+      });
+
+      // Get IMAP configuration
+      const { imapConfig, searchOptions, credentials } = await exports.getImapConfig(credentialId, options);
+
+      jobQueue.updateJob(jobId, {
+        message: 'Searching for job-related emails...',
+        progress: 10
+      });
+
+      // Search emails
+      const results = await exports.searchEmailsForJobs(imapConfig, searchOptions);
+
+      jobQueue.updateJob(jobId, {
+        message: `Found ${results.applications.length} applications, ${results.statusUpdates.length} status updates, and ${results.responses.length} responses`,
+        progress: 50
+      });
+
+      // Check which applications already exist
+      const applications = await exports.checkExistingJobs(results.applications);
+      const newApplications = applications.filter(app => !app.exists);
+
+      jobQueue.updateJob(jobId, {
+        message: `Processing ${newApplications.length} new applications (${applications.length - newApplications.length} already exist)`,
+        progress: 60
+      });
+
+      // Process all items using the background processor
+      await exports.processItemsInBackground(jobId, applications, results.statusUpdates, results.responses);
+
+    } catch (error) {
+      console.error('Background sync job error:', error);
+      jobQueue.failJob(jobId, error);
+    }
+  });
+
+  return jobId;
+};
+
+/**
+ * Start a background email search job - returns immediately and processes in background
+ * @param {string} jobId - The job ID for tracking progress
+ * @param {string} credentialId - Credential ID to use for email search
+ * @param {Object} options - Search options
+ * @returns {string} Job ID
+ */
+exports.startBackgroundEmailSearch = (jobId, credentialId, options = {}) => {
+  const jobQueue = require('../utils/jobQueue');
+
+  // Start processing in the background without blocking the request
+  setImmediate(async () => {
+    try {
+      jobQueue.startJob(jobId);
+      jobQueue.updateJob(jobId, {
+        message: 'Connecting to email server...',
+        progress: 5
+      });
+
+      // Get IMAP configuration
+      const { imapConfig, searchOptions } = await exports.getImapConfig(credentialId, options);
+
+      jobQueue.updateJob(jobId, {
+        message: 'Searching for job-related emails...',
+        progress: 10
+      });
+
+      // Keep track of processing statistics
+      const processingStats = {
+        emailsTotal: 0,
+        emailsProcessed: 0,
+        foldersTotal: searchOptions.searchFolders.length,
+        foldersProcessed: 0,
+        enrichmentTotal: 0,
+        enrichmentProcessed: 0
+      };
+
+      // Search emails with batching
+      const results = await searchEmailsInBatches(imapConfig, searchOptions, 25, processingStats);
+
+      jobQueue.updateJob(jobId, {
+        message: `Found ${results.applications.length} applications, ${results.statusUpdates.length} status updates, and ${results.responses.length} responses`,
+        progress: 50
+      });
+
+      // Check which applications already exist
+      const applications = await exports.checkExistingJobs(results.applications);
+      const newApplications = applications.filter(app => !app.exists);
+
+      jobQueue.updateJob(jobId, {
+        message: `Found ${applications.length} job applications (${newApplications.length} new, ${applications.length - newApplications.length} existing)`,
+        progress: 75
+      });
+
+      // Complete the job with the search results
+      jobQueue.completeJob(jobId, {
+        applications,
+        statusUpdates: results.statusUpdates,
+        responses: results.responses,
+        processingStats,
+        stats: {
+          total: applications.length,
+          new: newApplications.length,
+          existing: applications.length - newApplications.length
+        },
+        message: `Found a total of ${applications.length} job applications, ${results.statusUpdates.length} status updates, and ${results.responses.length} responses`
+      });
+    } catch (error) {
+      console.error('Background email search job failed:', error);
+      jobQueue.failJob(jobId, error);
+    }
+  });
+
+  return jobId;
+};

@@ -36,6 +36,35 @@ router.post('/sync',
   emailController.syncEmailItems
 );
 
+// NEW: Start async sync - returns job ID immediately
+router.post('/sync-background',
+  [
+    body('credentialId').notEmpty().withMessage('Credential ID is required'),
+  ],
+  emailController.startBackgroundSync
+);
+
+// NEW: Start async email search - returns job ID immediately
+router.post('/search-background',
+  [
+    body('credentialId').notEmpty().withMessage('Credential ID is required'),
+  ],
+  emailController.startBackgroundEmailSearch
+);
+
+// NEW: Import items using background job
+router.post('/import-background',
+  [
+    body('applications').optional().isArray(),
+    body('statusUpdates').optional().isArray(),
+    body('responses').optional().isArray(),
+  ],
+  emailController.importItemsFromJob
+);
+
+// NEW: Get job status by ID
+router.get('/job/:jobId', emailController.getJobStatus);
+
 // Import items that were previously found during search
 router.post('/import-all',
   [
