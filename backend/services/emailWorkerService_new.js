@@ -25,6 +25,12 @@ const jobs = new Map();
 exports.startEmailSearchJob = (credentialId, options = {}) => {
   const jobId = uuid();
 
+  // Always enable autoProcess unless explicitly set to false
+  const processOptions = {
+    ...options,
+    autoProcess: options.autoProcess !== false
+  };
+
   // Initialize job in memory
   jobs.set(jobId, {
     id: jobId,
@@ -32,7 +38,7 @@ exports.startEmailSearchJob = (credentialId, options = {}) => {
     status: 'queued',
     progress: 0,
     message: 'Job queued',
-    data: { credentialId, options },
+    data: { credentialId, options: processOptions },
     createdAt: new Date(),
     updatedAt: new Date(),
     result: null,
@@ -46,7 +52,7 @@ exports.startEmailSearchJob = (credentialId, options = {}) => {
       updateJob(jobId, { status: 'running', progress: 5, message: 'Starting email search' });
 
       // Run the actual search
-      const results = await emailProcessorService.searchEmails(credentialId, options);
+      const results = await emailProcessorService.searchEmails(credentialId, processOptions);
 
       // Update job with search results
       updateJob(jobId, {
@@ -57,7 +63,7 @@ exports.startEmailSearchJob = (credentialId, options = {}) => {
       });
 
       // If specified in options, automatically process the results
-      if (options.autoProcess) {
+      if (processOptions.autoProcess) {
         exports.startItemsProcessingJob(
           results.applications.filter(app => !app.exists),
           results.statusUpdates,

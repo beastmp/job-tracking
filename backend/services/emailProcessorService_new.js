@@ -14,6 +14,14 @@ const Job = require('../models/Job');
 const EmailCredentials = require('../models/EmailCredentials');
 const jobUtils = require('../utils/jobUtils');
 const webEnrichmentService = require('./webEnrichmentService_new');
+const emailService = require('./emailService');
+
+// Import the email parsing functions from emailService
+const parseLinkedInJobApplication = emailService.parseLinkedInJobApplication;
+const parseLinkedInStatusEmail = emailService.parseLinkedInStatusEmail;
+const parseLinkedInResponseEmail = emailService.parseLinkedInResponseEmail;
+const parseGenericApplicationEmail = emailService.parseGenericApplicationEmail;
+const parseGenericResponseEmail = emailService.parseGenericResponseEmail;
 
 /**
  * Search emails using a credential ID
