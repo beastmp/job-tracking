@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { jobsAPI } from '../utils/api';
+import api from '../utils/api';
 
 const ApplicationsPage = ({ jobs, onDeleteJob, onUpdateStatus, onBulkDeleteJobs, refreshData }) => {
   const [selectedJobs, setSelectedJobs] = useState({});
@@ -67,7 +67,7 @@ const ApplicationsPage = ({ jobs, onDeleteJob, onUpdateStatus, onBulkDeleteJobs,
       });
 
       const jobIdsToEnrich = Object.keys(selectedJobs).filter(id => selectedJobs[id]);
-      const response = await jobsAPI.reEnrichJobs(jobIdsToEnrich);
+      const response = await api.reEnrichJobs(jobIdsToEnrich);
 
       setEnrichmentMessage({
         type: 'success',

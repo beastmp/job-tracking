@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import api, { emailsAPI } from '../utils/api';
+import api from '../utils/api';
 
 // Get default configuration from environment variables with fallbacks
 const DEFAULT_SEARCH_TIMEFRAME_DAYS = parseInt(process.env.REACT_APP_DEFAULT_SEARCH_TIMEFRAME_DAYS || '90', 10);
@@ -593,7 +593,7 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
   // Add this function to fetch the enrichment status
   const fetchEnrichmentStatus = async () => {
     try {
-      const response = await emailsAPI.getEnrichmentStatus();
+      const response = await api.getEnrichmentStatus();
       if (response.data.success) {
         setEnrichmentStatus(response.data.status);
       }
@@ -607,7 +607,7 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
     if (!jobId) return;
 
     try {
-      const response = await emailsAPI.getJobStatus(jobId);
+      const response = await api.getJobStatus(jobId);
       const job = response.data.job;
 
       if (!job) {
@@ -918,7 +918,7 @@ const EmailIntegration = ({ onImportJobs, refreshData }) => {
       });
 
       // Start the background sync job
-      const response = await emailsAPI.syncEmailsBackground({
+      const response = await api.syncEmailsBackground({
         credentialId,
         ignorePreviousImport
       });
