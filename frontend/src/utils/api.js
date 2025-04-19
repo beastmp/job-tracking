@@ -15,11 +15,16 @@ const api = axios.create({
 let loadingHandlers = {
   setLoading: () => {}, // Default no-op handlers
   setLoadingMessage: () => {},
-  clearLoading: () => {},
+  clearLoading: () => {} // Ensure this has a default implementation
 };
 
 export const setLoadingHandlers = (handlers) => {
-  loadingHandlers = handlers;
+  // Make sure we're not replacing any handlers with undefined
+  loadingHandlers = {
+    setLoading: handlers.setLoading || loadingHandlers.setLoading,
+    setLoadingMessage: handlers.setLoadingMessage || loadingHandlers.setLoadingMessage,
+    clearLoading: handlers.clearLoading || loadingHandlers.clearLoading
+  };
 };
 
 // Request interceptor to show loading state

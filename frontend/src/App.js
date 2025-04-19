@@ -41,7 +41,12 @@ const AppContent = () => {
         setLoadingProgress(progress);
       },
       setLoadingMessage,
-      setLoadingProgress
+      setLoadingProgress,
+      clearLoading: () => {
+        setLoading(false);
+        setLoadingMessage('');
+        setLoadingProgress(0);
+      }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty dependency array to run only once on mount
