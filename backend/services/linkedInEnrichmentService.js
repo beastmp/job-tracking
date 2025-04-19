@@ -600,3 +600,42 @@ exports.applyEnrichmentToJob = (job, enrichedData) => {
 exports.getPendingEnrichmentCount = () => {
   return enrichmentQueue.length;
 };
+
+/**
+ * Directly enrich job data from LinkedIn without using the queue system
+ * Use this for synchronous processing during email imports
+ * @param {string} url LinkedIn job URL
+ * @returns {Promise<Object|null>} Enriched job data
+ */
+exports.enrichJobDataDirectly = async (url) => {
+  if (!url) return null;
+
+  try {
+    console.log(`Direct enrichment request for LinkedIn URL: ${url}`);
+
+    // Apply a small delay to respect rate limits
+    await new Promise(resolve => setTimeout(resolve, RATE_LIMIT.standardDelay));
+
+    // Use the same enrichment function as the queue system
+    const enrichedData = await enrichJobDataFromLinkedIn(url);
+
+    if (enrichedData) {
+      console.log(`Successfully enriched job data directly for URL: ${url}`);
+      return enrichedData;
+    } else {
+      console.log(`No enrichment data available for URL: ${url}`);
+      return null;
+    }
+  } catch (error) {
+    console.error(`Error directly enriching LinkedIn job data: ${error.message}`);
+
+    // Check if this is a rate limit error
+    if (error.response && (error.response.status === 429 || error.response.status === 403)) {
+      console.log(`LinkedIn API rate limit hit during direct enrichment - falling back to queue system`);
+      // Don't try to re-queue here, as that would create an infinite loop
+    }
+
+    // Return null instead of throwing, so the process can continue
+    return null;
+  }
+};

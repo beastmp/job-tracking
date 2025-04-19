@@ -975,44 +975,71 @@ exports.processAllItems = async (applications = [], statusUpdates = [], response
     responses: { processed: 0, errors: 0 }
   };
 
-  // 1. Process job applications (create new jobs)
+  // 1. Process each job application individually (create new jobs)
   for (const application of applications) {
     try {
       // Skip items that already exist
       if (application.exists) continue;
 
-      // Create new job
+      console.log(`Processing application for ${application.jobTitle} at ${application.company}`);
+
+      // 2.a. Initial data is already parsed from the email
+
+      // 2.b. Enrich the item if applicable
+      let enrichedApplication = application;
+      if (application.website && application.website.includes('linkedin.com/jobs/view')) {
+        console.log('LinkedIn job URL detected, enriching data...');
+        try {
+          // Process enrichment directly and wait for the result
+          // This replaces the batch approach to ensure each item is fully enriched before saving
+          const enrichedData = await linkedInService.enrichJobDataDirectly(application.website);
+
+          if (enrichedData) {
+            enrichedApplication = linkedInService.applyEnrichmentToJob(application, enrichedData);
+            console.log('Successfully enriched application data');
+          }
+        } catch (enrichError) {
+          console.error('Error enriching job data:', enrichError);
+          // Continue with original data if enrichment fails
+        }
+      }
+
+      // 2.c. Save the job to database
       const newJob = new Job({
-        source: application.source || 'LinkedIn',
-        applicationThrough: application.applicationThrough || 'LinkedIn',
-        company: application.company,
-        companyLocation: application.companyLocation,
-        locationType: application.locationType || 'Remote',
-        employmentType: application.employmentType || 'Full-time',
-        jobTitle: application.jobTitle,
-        wagesMin: application.wagesMin || null,
-        wagesMax: application.wagesMax || null,
-        wageType: application.wageType || 'Yearly',
-        applied: application.applied || new Date(),
+        source: enrichedApplication.source || 'LinkedIn',
+        applicationThrough: enrichedApplication.applicationThrough || 'LinkedIn',
+        company: enrichedApplication.company,
+        companyLocation: enrichedApplication.companyLocation,
+        locationType: enrichedApplication.locationType || 'Remote',
+        employmentType: enrichedApplication.employmentType || 'Full-time',
+        jobTitle: enrichedApplication.jobTitle,
+        wagesMin: enrichedApplication.wagesMin || null,
+        wagesMax: enrichedApplication.wagesMax || null,
+        wageType: enrichedApplication.wageType || 'Yearly',
+        applied: enrichedApplication.applied || new Date(),
         responded: null,
         response: 'No Response',
-        website: application.website || application.jobUrl || '',
-        description: application.description || '',
-        externalJobId: application.externalJobId || '',
-        notes: application.notes || `Imported from email on ${new Date().toLocaleDateString()}`
+        website: enrichedApplication.website || enrichedApplication.jobUrl || '',
+        description: enrichedApplication.description || '',
+        externalJobId: enrichedApplication.externalJobId || '',
+        notes: enrichedApplication.notes || `Imported from email on ${new Date().toLocaleDateString()}`
       });
 
       await newJob.save();
+      console.log(`Successfully saved job application for ${enrichedApplication.jobTitle} at ${enrichedApplication.company}`);
       stats.applications.added++;
     } catch (error) {
       console.error('Error importing job application:', error);
       stats.applications.errors++;
     }
+    // 2.d. Move on to the next item - handled by the loop
   }
 
-  // 2. Process status updates (update existing jobs)
+  // Process status updates (update existing jobs)
   for (const statusUpdate of statusUpdates) {
     try {
+      console.log(`Processing status update for ${statusUpdate.jobTitle} at ${statusUpdate.company}`);
+
       // Find the job to update
       const job = await jobUtils.findJob(
         statusUpdate.company,
@@ -1028,7 +1055,10 @@ exports.processAllItems = async (applications = [], statusUpdates = [], response
         });
 
         await job.save();
+        console.log(`Successfully updated status for job: ${job.jobTitle} at ${job.company}`);
         stats.statusUpdates.processed++;
+      } else {
+        console.log(`Could not find matching job for status update: ${statusUpdate.jobTitle} at ${statusUpdate.company}`);
       }
     } catch (error) {
       console.error('Error processing status update:', error);
@@ -1036,9 +1066,11 @@ exports.processAllItems = async (applications = [], statusUpdates = [], response
     }
   }
 
-  // 3. Process responses (update existing jobs with response status)
+  // Process responses (update existing jobs with response status)
   for (const response of responses) {
     try {
+      console.log(`Processing response for ${response.jobTitle} at ${response.company}`);
+
       // Find the job to update
       const job = await jobUtils.findJob(
         response.company,
@@ -1063,7 +1095,10 @@ exports.processAllItems = async (applications = [], statusUpdates = [], response
         });
 
         await job.save();
+        console.log(`Successfully processed response for job: ${job.jobTitle} at ${job.company}`);
         stats.responses.processed++;
+      } else {
+        console.log(`Could not find matching job for response: ${response.jobTitle} at ${response.company}`);
       }
     } catch (error) {
       console.error('Error processing job response:', error);
