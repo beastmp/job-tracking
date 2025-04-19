@@ -288,14 +288,16 @@ exports.getImapConfig = async (credentialId, options = {}) => {
     throw new Error('Error decrypting email password');
   }
 
-  // Create IMAP configuration
+  // Create IMAP configuration with increased timeouts
   const imapConfig = {
     user: credentials.email,
     password: password,
     host: credentials.imapHost,
     port: credentials.imapPort,
     tls: credentials.useTLS,
-    tlsOptions: { rejectUnauthorized: credentials.rejectUnauthorized }
+    tlsOptions: { rejectUnauthorized: credentials.rejectUnauthorized },
+    connTimeout: 60000, // Increased connection timeout to 60 seconds (from default 10 seconds)
+    authTimeout: 60000  // Increased authentication timeout to 60 seconds
   };
 
   // Determine search date
