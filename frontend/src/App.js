@@ -177,6 +177,9 @@ function AppMain() {
                 <li className="nav-item">
                   <Link className="nav-link" to="/email-processing">Email Processing</Link>
                 </li>
+                <li className="nav-item">
+                  <Link className="nav-link" to="/email-processing01">Email Processing</Link>
+                </li>
               </ul>
             </div>
           </div>
